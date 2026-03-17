@@ -1,0 +1,25 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+.env
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Project outputs
+outputs/
+
+# Local dataset storage
+/data/raw/
+/data/processed/
+
+# Local notes
+proposal.txt
