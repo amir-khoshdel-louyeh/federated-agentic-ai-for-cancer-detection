@@ -6,7 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from .base_agent import BaseAgent
+from .base_pattern import ThinkingPattern
 
 
 class _MLP(nn.Module):
@@ -25,8 +25,8 @@ class _MLP(nn.Module):
         return self.net(x)
 
 
-class DeepLearningAgent(BaseAgent):
-    """Tabular deep learning agent implemented as a small MLP."""
+class DeepLearningThinkingPattern(ThinkingPattern):
+    """Tabular deep learning thinking pattern implemented as a small MLP."""
 
     def __init__(self, epochs: int = 20, batch_size: int = 32, lr: float = 1e-3) -> None:
         self.epochs = epochs
@@ -64,7 +64,7 @@ class DeepLearningAgent(BaseAgent):
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
         if self.model is None:
-            raise RuntimeError("DeepLearningAgent must be fitted before prediction.")
+            raise RuntimeError("DeepLearningThinkingPattern must be fitted before prediction.")
 
         self.model.eval()
         x_scaled = self.scaler.transform(x).astype(np.float32)
