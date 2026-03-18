@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base_agent import BaseAgent
+from .base_pattern import ThinkingPattern
 
 
-class RuleBasedAgent(BaseAgent):
+class RuleBasedThinkingPattern(ThinkingPattern):
     """
     Deterministic baseline inspired by simple ABCD-style lesion heuristics.
 
@@ -26,7 +26,7 @@ class RuleBasedAgent(BaseAgent):
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
         if x.ndim != 2 or x.shape[1] < 5:
-            raise ValueError("RuleBasedAgent requires at least 5 normalized tabular features.")
+            raise ValueError("RuleBasedThinkingPattern requires at least 5 normalized tabular features.")
 
         asymmetry = x[:, 0]
         border = x[:, 1]
@@ -45,3 +45,14 @@ class RuleBasedAgent(BaseAgent):
         # Map rule score to a smooth probability while keeping deterministic behavior.
         prob = 1.0 / (1.0 + np.exp(-10.0 * (score - self.threshold)))
         return np.clip(prob, 0.0, 1.0)
+
+
+class RuleBasedStrictThinkingPattern(RuleBasedThinkingPattern):
+    """Stricter deterministic heuristic with a higher risk threshold."""
+
+    def __init__(self) -> None:
+        super().__init__(threshold=0.68)
+
+    @property
+    def name(self) -> str:
+        return "rule_based_strict"
