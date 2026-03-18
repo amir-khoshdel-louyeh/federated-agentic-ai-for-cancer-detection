@@ -3,11 +3,11 @@ from __future__ import annotations
 import numpy as np
 from sklearn.naive_bayes import GaussianNB
 
-from .base_agent import BaseAgent
+from .base_pattern import ThinkingPattern
 
 
-class BayesianAgent(BaseAgent):
-    """Probabilistic local agent using Gaussian Naive Bayes."""
+class BayesianThinkingPattern(ThinkingPattern):
+    """Probabilistic thinking pattern using Gaussian Naive Bayes."""
 
     def __init__(self) -> None:
         self.model = GaussianNB()
