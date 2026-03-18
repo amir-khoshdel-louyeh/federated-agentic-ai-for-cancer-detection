@@ -25,7 +25,7 @@ def main() -> None:
 			return
 		transitioned = True
 		root.destroy()
-		runpy.run_module("src.simulator.main", run_name="__main__")
+		runpy.run_module("src.simulator.simulator", run_name="simulator")
 
 	canvas = tk.Canvas(root, highlightthickness=0, bg="#0B1220")
 	canvas.pack(fill="both", expand=True)
