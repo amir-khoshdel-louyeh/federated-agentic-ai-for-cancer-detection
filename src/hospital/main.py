@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
-from .agents import BayesianAgent, DeepLearningAgent, RuleBasedAgent
+from src.agents import BayesianAgent, DeepLearningAgent, RuleBasedAgent
 from .hospital_env import VirtualHospital
 from .meta_controller import LocalMetaController
 
