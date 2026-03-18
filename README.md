@@ -161,3 +161,38 @@ This project is for academic and research purposes and distributed under the **M
 Contributions, ideas, and improvements are welcome.
 
 Feel free to fork the project and experiment with new agent strategies, privacy mechanisms, or aggregation methods.
+
+## Single Hospital Multi-Agent Implementation
+
+The initial implementation is intentionally simple and local-only (no federated server yet).
+
+### Project Paths
+
+- `src/hospital/hospital_env.py`: virtual hospital loader for HAM10000 + ISIC 2019 metadata
+- `src/hospital/agents/rule_based_agent.py`: deterministic ABCD-inspired rule engine
+- `src/hospital/agents/bayesian_agent.py`: probabilistic agent (Gaussian Naive Bayes)
+- `src/hospital/agents/deep_learning_agent.py`: compact PyTorch MLP agent
+- `src/hospital/meta_controller.py`: adaptive weighted ensemble controller
+- `src/hospital/main.py`: end-to-end train/evaluate runner
+- `configs/hospital_local.yaml`: editable local paths and parameters
+
+### Dataset Inputs
+
+Expected files:
+
+- HAM10000 metadata CSV (for example `HAM10000_metadata.csv`)
+- ISIC 2019 ground truth CSV (for example `ISIC_2019_Training_GroundTruth.csv`)
+
+### Run
+
+```bash
+python -m src.hospital.main \
+	--ham-csv data/raw/ham10000/HAM10000_metadata.csv \
+	--isic-csv data/raw/isic2019/ISIC_2019_Training_GroundTruth.csv \
+	--out-dir outputs
+```
+
+### Outputs
+
+- `outputs/metrics.json`: per-agent and ensemble metrics (accuracy, f1, auc, weights)
+- `outputs/predictions.csv`: test predictions and probabilities per agent
