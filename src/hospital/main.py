@@ -8,7 +8,18 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
-from src.agents import BayesianAgent, DeepLearningAgent, RuleBasedAgent
+from src.agents import (
+    AKIECAgent,
+    BCCAgent,
+    BayesianThinkingPattern,
+    DeepLearningThinkingPattern,
+    MelanomaAgent,
+    RuleBasedStrictThinkingPattern,
+    RuleBasedThinkingPattern,
+    SCCAgent,
+    SkinCancerAgent,
+    ThinkingPattern,
+)
 from .hospital_env import VirtualHospital
 from .meta_controller import LocalMetaController
 
@@ -34,17 +45,39 @@ def eval_probs(y_true: np.ndarray, probs: np.ndarray) -> dict[str, float]:
     return metrics
 
 
+def _build_thinking_pattern(name: str) -> ThinkingPattern:
+    normalized = name.strip().lower()
+    if normalized == "rule_based":
+        return RuleBasedThinkingPattern()
+    if normalized == "rule_based_strict":
+        return RuleBasedStrictThinkingPattern()
+    if normalized == "bayesian":
+        return BayesianThinkingPattern()
+    if normalized == "deep_learning":
+        return DeepLearningThinkingPattern(epochs=20, batch_size=64, lr=1e-3)
+    raise ValueError(f"Unsupported thinking pattern: {name}")
+
+
+def _build_cancer_agents() -> list[SkinCancerAgent]:
+    # Cancer type is fixed per agent; pattern can be changed at runtime.
+    bcc_agent = BCCAgent(thinking_pattern=_build_thinking_pattern("rule_based"))
+    scc_agent = SCCAgent(thinking_pattern=_build_thinking_pattern("bayesian"))
+    melanoma_agent = MelanomaAgent(thinking_pattern=_build_thinking_pattern("deep_learning"))
+    akiec_agent = AKIECAgent(thinking_pattern=_build_thinking_pattern("rule_based"))
+
+    # Example runtime switch without creating combination classes.
+    akiec_agent.set_thinking_pattern(_build_thinking_pattern("rule_based_strict"))
+
+    return [bcc_agent, scc_agent, melanoma_agent, akiec_agent]
+
+
 def main() -> None:
     args = parse_args()
 
     hospital = VirtualHospital(random_state=42)
     splits = hospital.load(args.ham_csv, args.isic_csv)
 
-    agents = [
-        RuleBasedAgent(),
-        BayesianAgent(),
-        DeepLearningAgent(epochs=20, batch_size=64, lr=1e-3),
-    ]
+    agents = _build_cancer_agents()
 
     val_predictions: dict[str, np.ndarray] = {}
     test_predictions: dict[str, np.ndarray] = {}
