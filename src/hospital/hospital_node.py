@@ -12,6 +12,8 @@ from .contracts import (
 )
 from .agent_portfolio import AgentPortfolio
 from .hospital_env import VirtualHospital
+from .pattern_factory import create_thinking_pattern
+from .pattern_policy import StaticPatternPolicy
 
 
 class HospitalNode(HospitalLifecycleContract):
@@ -31,12 +33,13 @@ class HospitalNode(HospitalLifecycleContract):
         self.isic_labels_csv = Path(isic_labels_csv)
         self.dataset_handler = dataset_handler or VirtualHospital(random_state=42)
         resolved_portfolio = agent_portfolio or AgentPortfolio()
+        resolved_policy = pattern_policy or StaticPatternPolicy(hospital_id=hospital_id)
 
         self.scope = HospitalScope(
             hospital_id=hospital_id,
             data=None,
             agent_portfolio=resolved_portfolio,
-            pattern_policy=pattern_policy,
+            pattern_policy=resolved_policy,
         )
 
     @property
@@ -58,8 +61,16 @@ class HospitalNode(HospitalLifecycleContract):
             y_test=splits.y_test,
         )
 
+        if self.scope.agent_portfolio is None:
+            raise RuntimeError("HospitalNode requires an agent portfolio before initialize().")
+
         if self.scope.pattern_policy is not None:
-            self.metrics_store["selected_patterns"] = self.scope.pattern_policy.select_patterns()
+            selected_patterns = self.scope.pattern_policy.select_patterns()
+            for cancer_type, pattern_name in selected_patterns.items():
+                pattern = create_thinking_pattern(pattern_name)
+                self.scope.agent_portfolio.set_pattern(cancer_type, pattern)
+
+        self.metrics_store["selected_patterns"] = self.scope.agent_portfolio.selected_patterns()
 
         self.metrics_store["lifecycle_state"] = "initialized"
 

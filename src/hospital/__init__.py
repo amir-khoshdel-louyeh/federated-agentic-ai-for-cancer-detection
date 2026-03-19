@@ -4,6 +4,7 @@ from .agent_portfolio import AgentPortfolio
 from .contracts import HospitalDataBundle, HospitalLifecycleContract, HospitalScope
 from .hospital_node import HospitalNode
 from .pattern_factory import ThinkingPatternFactory, create_thinking_pattern
+from .pattern_policy import StaticPatternPolicy
 
 __all__ = [
 	"AgentPortfolio",
@@ -13,4 +14,5 @@ __all__ = [
 	"HospitalNode",
 	"ThinkingPatternFactory",
 	"create_thinking_pattern",
+	"StaticPatternPolicy",
 ]

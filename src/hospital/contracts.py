@@ -22,6 +22,12 @@ class HospitalDataBundle:
 class AgentPortfolioContract(Protocol):
     """Contract for a hospital portfolio of fixed cancer-domain agents."""
 
+    def set_pattern(self, cancer_type: str, pattern: Any) -> None:
+        ...
+
+    def selected_patterns(self) -> dict[str, str]:
+        ...
+
     def train_all(self, x_train: np.ndarray, y_train: np.ndarray) -> None:
         ...
 
