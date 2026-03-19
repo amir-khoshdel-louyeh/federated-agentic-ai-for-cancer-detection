@@ -3,6 +3,7 @@
 from .agent_portfolio import AgentPortfolio
 from .contracts import HospitalDataBundle, HospitalLifecycleContract, HospitalScope
 from .hospital_node import HospitalNode
+from .pattern_factory import ThinkingPatternFactory, create_thinking_pattern
 
 __all__ = [
 	"AgentPortfolio",
@@ -10,4 +11,6 @@ __all__ = [
 	"HospitalScope",
 	"HospitalLifecycleContract",
 	"HospitalNode",
+	"ThinkingPatternFactory",
+	"create_thinking_pattern",
 ]

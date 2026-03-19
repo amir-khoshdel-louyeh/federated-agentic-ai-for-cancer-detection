@@ -9,11 +9,11 @@ from src.agents import (
     AKIECAgent,
     BCCAgent,
     MelanomaAgent,
-    RuleBasedThinkingPattern,
     SCCAgent,
     SkinCancerAgent,
     ThinkingPattern,
 )
+from .pattern_factory import create_thinking_pattern
 
 CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
 
@@ -79,10 +79,10 @@ class AgentPortfolio:
     ) -> dict[str, ThinkingPattern]:
         if initial_patterns is None:
             return {
-                "BCC": RuleBasedThinkingPattern(),
-                "SCC": RuleBasedThinkingPattern(),
-                "MELANOMA": RuleBasedThinkingPattern(),
-                "AKIEC": RuleBasedThinkingPattern(),
+                "BCC": create_thinking_pattern("rule_based"),
+                "SCC": create_thinking_pattern("rule_based"),
+                "MELANOMA": create_thinking_pattern("rule_based"),
+                "AKIEC": create_thinking_pattern("rule_based"),
             }
 
         normalized: dict[str, ThinkingPattern] = {}
