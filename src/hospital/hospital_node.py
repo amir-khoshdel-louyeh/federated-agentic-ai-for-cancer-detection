@@ -10,6 +10,7 @@ from .contracts import (
     HospitalScope,
     PatternPolicyContract,
 )
+from .agent_portfolio import AgentPortfolio
 from .hospital_env import VirtualHospital
 
 
@@ -29,11 +30,12 @@ class HospitalNode(HospitalLifecycleContract):
         self.ham_metadata_csv = Path(ham_metadata_csv)
         self.isic_labels_csv = Path(isic_labels_csv)
         self.dataset_handler = dataset_handler or VirtualHospital(random_state=42)
+        resolved_portfolio = agent_portfolio or AgentPortfolio()
 
         self.scope = HospitalScope(
             hospital_id=hospital_id,
             data=None,
-            agent_portfolio=agent_portfolio,
+            agent_portfolio=resolved_portfolio,
             pattern_policy=pattern_policy,
         )
 
