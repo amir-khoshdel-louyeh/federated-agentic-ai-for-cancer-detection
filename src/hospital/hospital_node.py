@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import (
+    AdaptivePatternPolicyContract,
     AgentPortfolioContract,
     HospitalDataBundle,
     HospitalLifecycleContract,
@@ -83,6 +84,33 @@ class HospitalNode(HospitalLifecycleContract):
 
         self.scope.agent_portfolio.train_all(self.scope.data.x_train, self.scope.data.y_train)
         self.metrics_store["lifecycle_state"] = "trained"
+
+    def apply_adaptive_pattern_policy(
+        self,
+        validation_scores: dict[str, dict[str, float]],
+    ) -> dict[str, str]:
+        """Apply policy-driven pattern replacements after validation comparison."""
+        if self.scope.agent_portfolio is None:
+            raise RuntimeError("HospitalNode requires an agent portfolio before adaptive policy application.")
+        if self.scope.pattern_policy is None:
+            return self.scope.agent_portfolio.selected_patterns()
+
+        policy = self.scope.pattern_policy
+        if not isinstance(policy, AdaptivePatternPolicyContract):
+            return self.scope.agent_portfolio.selected_patterns()
+
+        current_patterns = self.scope.agent_portfolio.selected_patterns()
+        updated_patterns = policy.adapt_patterns(current_patterns, validation_scores)
+
+        for cancer_type, pattern_name in updated_patterns.items():
+            if current_patterns.get(cancer_type) == pattern_name:
+                continue
+            self.scope.agent_portfolio.set_pattern(cancer_type, create_thinking_pattern(pattern_name))
+
+        selected = self.scope.agent_portfolio.selected_patterns()
+        self.metrics_store["selected_patterns"] = selected
+        self.metrics_store["adaptive_policy_applied"] = True
+        return selected
 
     def evaluate(self) -> dict[str, Any]:
         """Run local predictions and return per-agent evaluation artifacts."""

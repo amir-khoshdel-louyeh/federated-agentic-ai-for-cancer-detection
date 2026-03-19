@@ -6,6 +6,7 @@ from typing import Mapping
 from .pattern_factory import ThinkingPatternFactory
 
 CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
+ValidationScoreByPattern = Mapping[str, Mapping[str, float]]
 
 
 @dataclass
@@ -50,3 +51,50 @@ class StaticPatternPolicy:
                 "Pattern policy includes unsupported pattern names: "
                 f"{', '.join(sorted(set(invalid)))}"
             )
+
+
+@dataclass
+class AdaptivePatternPolicy(StaticPatternPolicy):
+    """Adaptive hook that can switch patterns from validation leaderboard scores."""
+
+    min_improvement: float = 0.0
+
+    def adapt_patterns(
+        self,
+        current_mapping: Mapping[str, str],
+        validation_scores: ValidationScoreByPattern,
+    ) -> dict[str, str]:
+        # Keep adaptation strictly in policy layer so orchestration stays simple.
+        resolved = {key.strip().upper(): value.strip().lower() for key, value in current_mapping.items()}
+        self._validate_mapping(resolved)
+
+        for cancer_type in CANCER_TYPES:
+            candidates = validation_scores.get(cancer_type, {})
+            if not candidates:
+                continue
+
+            normalized_candidates = {
+                pattern_name.strip().lower(): float(score)
+                for pattern_name, score in candidates.items()
+            }
+
+            supported = set(ThinkingPatternFactory().supported_patterns())
+            normalized_candidates = {
+                pattern_name: score
+                for pattern_name, score in normalized_candidates.items()
+                if pattern_name in supported
+            }
+            if not normalized_candidates:
+                continue
+
+            current_pattern = resolved[cancer_type]
+            current_score = normalized_candidates.get(current_pattern, float("-inf"))
+
+            best_pattern = max(normalized_candidates, key=normalized_candidates.get)
+            best_score = normalized_candidates[best_pattern]
+
+            if best_score > current_score + self.min_improvement:
+                resolved[cancer_type] = best_pattern
+
+        self._validate_mapping(resolved)
+        return resolved

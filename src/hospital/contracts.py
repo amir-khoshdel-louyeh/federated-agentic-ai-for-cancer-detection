@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -42,6 +42,18 @@ class PatternPolicyContract(Protocol):
     """Contract for assigning active thinking patterns per cancer type."""
 
     def select_patterns(self) -> dict[str, str]:
+        ...
+
+
+@runtime_checkable
+class AdaptivePatternPolicyContract(PatternPolicyContract, Protocol):
+    """Optional contract for policies that support validation-driven adaptation."""
+
+    def adapt_patterns(
+        self,
+        current_mapping: Mapping[str, str],
+        validation_scores: Mapping[str, Mapping[str, float]],
+    ) -> dict[str, str]:
         ...
 
 
