@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 import numpy as np
 
+from src.agents import SkinCancerAgent
+
 from .contracts import (
     AdaptivePatternPolicyContract,
     AgentPortfolioContract,
@@ -95,8 +97,42 @@ class HospitalNode(HospitalLifecycleContract):
             raise RuntimeError("Call initialize() before train().")
         if self.scope.agent_portfolio is None:
             raise RuntimeError("HospitalNode requires an agent portfolio before train().")
+        if self.local_data is None:
+            raise RuntimeError("Call initialize() before train().")
 
-        self.scope.agent_portfolio.train_all(self.scope.data.x_train, self.scope.data.y_train)
+        val_predictions: dict[str, np.ndarray] = {}
+        test_predictions: dict[str, np.ndarray] = {}
+        training_warnings: dict[str, str] = {}
+
+        for cancer_type in self.scope.agent_portfolio.cancer_types:
+            agent = self.scope.agent_portfolio.get_agent(cancer_type)
+            if not isinstance(agent, SkinCancerAgent):
+                raise TypeError(f"Portfolio agent for {cancer_type} must be a SkinCancerAgent.")
+
+            x_train, y_train = self.get_cancer_filtered_split(cancer_type=cancer_type, split="train")
+            x_val, _ = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
+            x_test, _ = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
+
+            # Some local hospital splits can miss positives for a cancer subtype.
+            if np.unique(y_train).size < 2:
+                x_train = self.scope.data.x_train
+                y_train = self.scope.data.y_train
+                training_warnings[cancer_type] = (
+                    "Insufficient one-vs-rest label diversity in train split; "
+                    "used malignant binary labels fallback."
+                )
+
+            agent.fit(x_train, y_train)
+            val_predictions[agent.name] = agent.predict_proba(x_val)
+            test_predictions[agent.name] = agent.predict_proba(x_test)
+
+        self.metrics_store["predictions"] = {
+            "val": val_predictions,
+            "test": test_predictions,
+        }
+        if training_warnings:
+            self.metrics_store["training_warnings"] = training_warnings
+
         self.metrics_store["lifecycle_state"] = "trained"
 
     def apply_adaptive_pattern_policy(
