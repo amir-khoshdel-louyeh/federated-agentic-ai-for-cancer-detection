@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+import numpy as np
 
 from .contracts import (
     AdaptivePatternPolicyContract,
     AgentPortfolioContract,
-    HospitalDataBundle,
     HospitalLifecycleContract,
     HospitalScope,
     PatternPolicyContract,
 )
 from .agent_portfolio import AgentPortfolio
+from .data_pipeline import LocalDataPipeline, LocalHospitalData
 from .hospital_env import VirtualHospital
 from .pattern_factory import create_thinking_pattern
 from .pattern_policy import StaticPatternPolicy
@@ -26,6 +28,7 @@ class HospitalNode(HospitalLifecycleContract):
         ham_metadata_csv: str | Path,
         isic_labels_csv: str | Path,
         dataset_handler: VirtualHospital | None = None,
+        data_pipeline: LocalDataPipeline | None = None,
         agent_portfolio: AgentPortfolioContract | None = None,
         pattern_policy: PatternPolicyContract | None = None,
     ) -> None:
@@ -33,6 +36,8 @@ class HospitalNode(HospitalLifecycleContract):
         self.ham_metadata_csv = Path(ham_metadata_csv)
         self.isic_labels_csv = Path(isic_labels_csv)
         self.dataset_handler = dataset_handler or VirtualHospital(random_state=42)
+        self.data_pipeline = data_pipeline or LocalDataPipeline(dataset_handler=self.dataset_handler)
+        self.local_data: LocalHospitalData | None = None
         resolved_portfolio = agent_portfolio or AgentPortfolio()
         resolved_policy = pattern_policy or StaticPatternPolicy(hospital_id=hospital_id)
 
@@ -49,18 +54,11 @@ class HospitalNode(HospitalLifecycleContract):
 
     def initialize(self) -> None:
         """Load local dataset and set initial policy metadata."""
-        splits = self.dataset_handler.load(
+        self.local_data = self.data_pipeline.load(
             ham_metadata_csv=self.ham_metadata_csv,
             isic_labels_csv=self.isic_labels_csv,
         )
-        self.scope.data = HospitalDataBundle(
-            x_train=splits.x_train,
-            y_train=splits.y_train,
-            x_val=splits.x_val,
-            y_val=splits.y_val,
-            x_test=splits.x_test,
-            y_test=splits.y_test,
-        )
+        self.scope.data = self.local_data.bundle
 
         if self.scope.agent_portfolio is None:
             raise RuntimeError("HospitalNode requires an agent portfolio before initialize().")
@@ -72,8 +70,24 @@ class HospitalNode(HospitalLifecycleContract):
                 self.scope.agent_portfolio.set_pattern(cancer_type, pattern)
 
         self.metrics_store["selected_patterns"] = self.scope.agent_portfolio.selected_patterns()
+        self.metrics_store["split_sizes"] = {
+            "train": int(self.scope.data.x_train.shape[0]),
+            "val": int(self.scope.data.x_val.shape[0]),
+            "test": int(self.scope.data.x_test.shape[0]),
+        }
 
         self.metrics_store["lifecycle_state"] = "initialized"
+
+    def get_cancer_filtered_split(
+        self,
+        cancer_type: str,
+        split: Literal["train", "val", "test"] = "train",
+        positive_only: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Expose per-cancer local filtering for downstream policy/evaluation logic."""
+        if self.local_data is None:
+            raise RuntimeError("Call initialize() before requesting cancer-filtered splits.")
+        return self.local_data.filter_for_cancer(cancer_type=cancer_type, split=split, positive_only=positive_only)
 
     def train(self) -> None:
         """Train all fixed cancer agents owned by this hospital node."""

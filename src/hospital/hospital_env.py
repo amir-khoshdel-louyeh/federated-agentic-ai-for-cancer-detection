@@ -18,10 +18,19 @@ class HospitalSplits:
     x_test: np.ndarray
     y_test: np.ndarray
     test_ids: np.ndarray
+    cancer_train: np.ndarray
+    cancer_val: np.ndarray
+    cancer_test: np.ndarray
 
 
-MALIGNANT_HAM = {"mel", "bcc", "akiec"}
+MALIGNANT_HAM = {"mel", "bcc", "akiec", "scc"}
 MALIGNANT_ISIC = {"MEL", "BCC", "AK", "SCC"}
+HAM_TO_CANCER_TYPE = {
+    "bcc": "BCC",
+    "scc": "SCC",
+    "mel": "MELANOMA",
+    "akiec": "AKIEC",
+}
 
 
 class VirtualHospital:
@@ -41,23 +50,26 @@ class VirtualHospital:
         isic_df = self._load_isic2019(isic_labels_csv)
         data = pd.concat([ham_df, isic_df], axis=0, ignore_index=True)
 
-        x = data.drop(columns=["target", "image_id"]).to_numpy(dtype=np.float32)
+        x = data.drop(columns=["target", "image_id", "cancer_type"]).to_numpy(dtype=np.float32)
         y = data["target"].to_numpy(dtype=np.int64)
         ids = data["image_id"].to_numpy()
+        cancer_types = data["cancer_type"].to_numpy(dtype=str)
 
-        x_train_val, x_test, y_train_val, y_test, id_train_val, id_test = train_test_split(
+        x_train_val, x_test, y_train_val, y_test, id_train_val, id_test, cancer_train_val, cancer_test = train_test_split(
             x,
             y,
             ids,
+            cancer_types,
             test_size=test_size,
             random_state=self.random_state,
             stratify=y,
         )
 
-        x_train, x_val, y_train, y_val, _, _ = train_test_split(
+        x_train, x_val, y_train, y_val, _, _, cancer_train, cancer_val = train_test_split(
             x_train_val,
             y_train_val,
             id_train_val,
+            cancer_train_val,
             test_size=val_size,
             random_state=self.random_state,
             stratify=y_train_val,
@@ -71,14 +83,25 @@ class VirtualHospital:
             x_test=x_test,
             y_test=y_test,
             test_ids=id_test,
+            cancer_train=cancer_train,
+            cancer_val=cancer_val,
+            cancer_test=cancer_test,
         )
 
     def _load_ham10000(self, metadata_csv: str | Path) -> pd.DataFrame:
         df = pd.read_csv(metadata_csv)
         image_col = "image_id" if "image_id" in df.columns else df.columns[0]
 
-        target = df["dx"].astype(str).str.lower().isin(MALIGNANT_HAM).astype(int)
-        base = pd.DataFrame({"image_id": df[image_col].astype(str), "target": target})
+        dx = df["dx"].astype(str).str.lower()
+        target = dx.isin(MALIGNANT_HAM).astype(int)
+        cancer_type = dx.map(HAM_TO_CANCER_TYPE).fillna("OTHER")
+        base = pd.DataFrame(
+            {
+                "image_id": df[image_col].astype(str),
+                "target": target,
+                "cancer_type": cancer_type,
+            }
+        )
         return self._build_features(base, df, age_candidates=("age",), site_candidates=("localization",))
 
     def _load_isic2019(self, labels_csv: str | Path) -> pd.DataFrame:
@@ -90,8 +113,34 @@ class VirtualHospital:
             raise ValueError("ISIC 2019 labels CSV must contain at least one malignant class column.")
 
         target = (df[present_labels].sum(axis=1) > 0).astype(int)
-        base = pd.DataFrame({"image_id": df[image_col].astype(str), "target": target})
+        cancer_type = self._infer_isic_cancer_type(df)
+        base = pd.DataFrame(
+            {
+                "image_id": df[image_col].astype(str),
+                "target": target,
+                "cancer_type": cancer_type,
+            }
+        )
         return self._build_features(base, df, age_candidates=("age_approx", "age"), site_candidates=("anatom_site_general",))
+
+    @staticmethod
+    def _infer_isic_cancer_type(df: pd.DataFrame) -> pd.Series:
+        mapping = {
+            "BCC": "BCC",
+            "SCC": "SCC",
+            "MEL": "MELANOMA",
+            "AK": "AKIEC",
+        }
+        resolved = pd.Series(np.full(len(df), "OTHER", dtype=object), index=df.index)
+
+        # Priority order keeps assignment deterministic if malformed rows have multiple positives.
+        for label in ("BCC", "SCC", "MEL", "AK"):
+            if label not in df.columns:
+                continue
+            mask = pd.to_numeric(df[label], errors="coerce").fillna(0.0) > 0
+            resolved = resolved.where(~mask, mapping[label])
+
+        return resolved.astype(str)
 
     def _build_features(
         self,
