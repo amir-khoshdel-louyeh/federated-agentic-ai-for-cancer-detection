@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_auc_score
 
 from src.agents import SkinCancerAgent
 
@@ -169,18 +170,96 @@ class HospitalNode(HospitalLifecycleContract):
         if self.scope.agent_portfolio is None:
             raise RuntimeError("HospitalNode requires an agent portfolio before evaluate().")
 
-        predictions = self.scope.agent_portfolio.predict_all(self.scope.data.x_test)
-        metrics = self.scope.agent_portfolio.evaluate_all(self.scope.data.y_test, predictions)
+        prediction_store = self.metrics_store.get("predictions", {})
+        val_predictions = prediction_store.get("val", {})
+        test_predictions = prediction_store.get("test", {})
+        if not test_predictions:
+            raise RuntimeError("Call train() before evaluate() to generate prediction artifacts.")
 
-        self.metrics_store["evaluation"] = metrics
+        test_metrics = {
+            key: self._compute_binary_metrics(self.scope.data.y_test, probs)
+            for key, probs in test_predictions.items()
+        }
+        val_metrics = {
+            key: self._compute_binary_metrics(self.scope.data.y_val, probs)
+            for key, probs in val_predictions.items()
+        }
+
+        selected_patterns = self.metrics_store.get("selected_patterns", {})
+        selected_performance: dict[str, dict[str, Any]] = {}
+        for cancer_type, pattern_name in selected_patterns.items():
+            prediction_key = f"{cancer_type.lower()}::{pattern_name}"
+            selected_performance[cancer_type] = {
+                "pattern": pattern_name,
+                "validation": val_metrics.get(prediction_key, {}),
+                "test": test_metrics.get(prediction_key, {}),
+            }
+
+        candidate_comparisons = self._build_candidate_comparisons(val_metrics)
+
+        self.metrics_store["evaluation"] = {
+            "validation": val_metrics,
+            "test": test_metrics,
+            "selected_performance": selected_performance,
+            "candidate_pattern_comparisons": candidate_comparisons,
+        }
         self.scope.report_output = {
             "hospital_id": self.hospital_id,
-            "metrics": metrics,
+            "metrics": self.metrics_store["evaluation"],
             "selected_patterns": self.metrics_store.get("selected_patterns", {}),
         }
         self.metrics_store["lifecycle_state"] = "evaluated"
 
         return self.scope.report_output
+
+    @staticmethod
+    def _compute_binary_metrics(y_true: np.ndarray, probs: np.ndarray) -> dict[str, float]:
+        preds = (probs >= 0.5).astype(int)
+        accuracy = float(accuracy_score(y_true, preds))
+        f1 = float(f1_score(y_true, preds, zero_division=0))
+        try:
+            auc = float(roc_auc_score(y_true, probs))
+        except ValueError:
+            auc = 0.5
+
+        # labels=[0, 1] guarantees stable unpacking for degenerate splits.
+        tn, fp, fn, tp = confusion_matrix(y_true, preds, labels=[0, 1]).ravel()
+        sensitivity = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+        specificity = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+
+        return {
+            "accuracy": accuracy,
+            "f1": f1,
+            "auc": auc,
+            "sensitivity": sensitivity,
+            "specificity": specificity,
+        }
+
+    @staticmethod
+    def _build_candidate_comparisons(
+        validation_metrics: dict[str, dict[str, float]],
+    ) -> dict[str, list[dict[str, float | str | int]]]:
+        grouped: dict[str, list[dict[str, float | str | int]]] = {}
+        for prediction_key, metrics in validation_metrics.items():
+            cancer_type, pattern_name = prediction_key.split("::", maxsplit=1)
+            cancer_key = cancer_type.upper()
+            grouped.setdefault(cancer_key, []).append(
+                {
+                    "pattern": pattern_name,
+                    "auc": float(metrics.get("auc", 0.0)),
+                    "accuracy": float(metrics.get("accuracy", 0.0)),
+                    "f1": float(metrics.get("f1", 0.0)),
+                }
+            )
+
+        comparisons: dict[str, list[dict[str, float | str | int]]] = {}
+        for cancer_type, candidates in grouped.items():
+            ranked = sorted(candidates, key=lambda item: float(item["auc"]), reverse=True)
+            for index, candidate in enumerate(ranked, start=1):
+                candidate["rank"] = index
+            comparisons[cancer_type] = ranked
+
+        return comparisons
 
     def export_update(self) -> dict[str, Any]:
         """Export standardized local update payload for future federation."""
