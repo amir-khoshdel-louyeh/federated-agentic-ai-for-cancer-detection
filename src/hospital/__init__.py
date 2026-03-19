@@ -9,6 +9,7 @@ from .contracts import (
 )
 from .data_pipeline import LocalDataPipeline, LocalHospitalData
 from .hospital_node import HospitalNode
+from .output_schema import SCHEMA_VERSION, build_hospital_output
 from .pattern_factory import ThinkingPatternFactory, create_thinking_pattern
 from .pattern_policy import AdaptivePatternPolicy, StaticPatternPolicy
 
@@ -21,6 +22,8 @@ __all__ = [
 	"LocalDataPipeline",
 	"LocalHospitalData",
 	"HospitalNode",
+	"SCHEMA_VERSION",
+	"build_hospital_output",
 	"ThinkingPatternFactory",
 	"create_thinking_pattern",
 	"StaticPatternPolicy",

@@ -18,6 +18,7 @@ from .contracts import (
 from .agent_portfolio import AgentPortfolio
 from .data_pipeline import LocalDataPipeline, LocalHospitalData
 from .hospital_env import VirtualHospital
+from .output_schema import build_hospital_output
 from .pattern_factory import create_thinking_pattern
 from .pattern_policy import StaticPatternPolicy
 
@@ -263,11 +264,16 @@ class HospitalNode(HospitalLifecycleContract):
 
     def export_update(self) -> dict[str, Any]:
         """Export standardized local update payload for future federation."""
-        output = {
-            "hospital_id": self.hospital_id,
-            "lifecycle_state": self.metrics_store.get("lifecycle_state", "created"),
-            "selected_patterns": self.metrics_store.get("selected_patterns", {}),
-            "metrics": self.metrics_store.get("evaluation", {}),
-        }
+        output = build_hospital_output(
+            hospital_id=self.hospital_id,
+            lifecycle_state=str(self.metrics_store.get("lifecycle_state", "created")),
+            selected_patterns=dict(self.metrics_store.get("selected_patterns", {})),
+            evaluation=dict(self.metrics_store.get("evaluation", {})),
+            split_sizes=dict(self.metrics_store.get("split_sizes", {})),
+            training_warnings=dict(self.metrics_store.get("training_warnings", {})),
+            extra_metadata={
+                "adaptive_policy_applied": bool(self.metrics_store.get("adaptive_policy_applied", False)),
+            },
+        )
         self.scope.report_output = output
         return output
