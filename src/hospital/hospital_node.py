@@ -19,8 +19,10 @@ from .agent_portfolio import AgentPortfolio
 from .data_pipeline import LocalDataPipeline, LocalHospitalData
 from .hospital_env import VirtualHospital
 from .output_schema import build_hospital_output
-from .pattern_factory import create_thinking_pattern
+from .pattern_factory import ThinkingPatternFactory, create_thinking_pattern
 from .pattern_policy import StaticPatternPolicy
+
+EXPECTED_CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
 
 
 class HospitalNode(HospitalLifecycleContract):
@@ -66,6 +68,7 @@ class HospitalNode(HospitalLifecycleContract):
 
         if self.scope.agent_portfolio is None:
             raise RuntimeError("HospitalNode requires an agent portfolio before initialize().")
+        self._validate_portfolio_contract()
 
         if self.scope.pattern_policy is not None:
             selected_patterns = self.scope.pattern_policy.select_patterns()
@@ -74,6 +77,7 @@ class HospitalNode(HospitalLifecycleContract):
                 self.scope.agent_portfolio.set_pattern(cancer_type, pattern)
 
         self.metrics_store["selected_patterns"] = self.scope.agent_portfolio.selected_patterns()
+        self._validate_selected_patterns(self.metrics_store["selected_patterns"])
         self.metrics_store["split_sizes"] = {
             "train": int(self.scope.data.x_train.shape[0]),
             "val": int(self.scope.data.x_val.shape[0]),
@@ -125,8 +129,13 @@ class HospitalNode(HospitalLifecycleContract):
                 )
 
             agent.fit(x_train, y_train)
-            val_predictions[agent.name] = agent.predict_proba(x_val)
-            test_predictions[agent.name] = agent.predict_proba(x_test)
+            val_probs = agent.predict_proba(x_val)
+            test_probs = agent.predict_proba(x_test)
+            self._validate_prediction_shape(agent.name, val_probs, expected_size=x_val.shape[0])
+            self._validate_prediction_shape(agent.name, test_probs, expected_size=x_test.shape[0])
+
+            val_predictions[agent.name] = val_probs
+            test_predictions[agent.name] = test_probs
 
         self.metrics_store["predictions"] = {
             "val": val_predictions,
@@ -261,6 +270,45 @@ class HospitalNode(HospitalLifecycleContract):
             comparisons[cancer_type] = ranked
 
         return comparisons
+
+    def _validate_portfolio_contract(self) -> None:
+        if self.scope.agent_portfolio is None:
+            raise RuntimeError("HospitalNode requires an agent portfolio.")
+
+        cancer_types = tuple(self.scope.agent_portfolio.cancer_types)
+        if len(cancer_types) != 4:
+            raise ValueError("Agent portfolio must expose exactly 4 cancer agents.")
+        if set(cancer_types) != set(EXPECTED_CANCER_TYPES):
+            raise ValueError(
+                "Agent portfolio cancer types must be exactly: "
+                f"{', '.join(EXPECTED_CANCER_TYPES)}"
+            )
+
+    @staticmethod
+    def _validate_selected_patterns(selected_patterns: dict[str, str]) -> None:
+        missing = [c for c in EXPECTED_CANCER_TYPES if c not in selected_patterns]
+        if missing:
+            raise ValueError(
+                "Selected patterns missing required cancer types: "
+                f"{', '.join(missing)}"
+            )
+
+        supported = set(ThinkingPatternFactory().supported_patterns())
+        invalid = [name for name in selected_patterns.values() if name not in supported]
+        if invalid:
+            raise ValueError(
+                "Selected patterns contain unsupported names: "
+                f"{', '.join(sorted(set(invalid)))}"
+            )
+
+    @staticmethod
+    def _validate_prediction_shape(agent_name: str, probs: np.ndarray, expected_size: int) -> None:
+        if probs.ndim != 1:
+            raise ValueError(f"Prediction output for {agent_name} must be a 1D array.")
+        if probs.shape[0] != expected_size:
+            raise ValueError(
+                f"Prediction size mismatch for {agent_name}: expected {expected_size}, got {probs.shape[0]}"
+            )
 
     def export_update(self) -> dict[str, Any]:
         """Export standardized local update payload for future federation."""
