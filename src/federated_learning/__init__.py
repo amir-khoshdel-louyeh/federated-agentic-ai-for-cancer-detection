@@ -6,6 +6,7 @@ from .contracts import (
 	LocalHospitalUpdatePayload,
 	OrchestratorRoundOutput,
 )
+from .validators import UpdateValidationError, ValidationReport, validate_local_update, validate_local_updates
 
 __all__ = [
 	"AggregationOutput",
@@ -14,4 +15,8 @@ __all__ = [
 	"FederatedOrchestratorContract",
 	"LocalHospitalUpdatePayload",
 	"OrchestratorRoundOutput",
+	"UpdateValidationError",
+	"ValidationReport",
+	"validate_local_update",
+	"validate_local_updates",
 ]
