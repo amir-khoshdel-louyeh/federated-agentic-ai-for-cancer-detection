@@ -12,6 +12,7 @@ from .hospital_node import HospitalNode
 from .output_schema import SCHEMA_VERSION, build_hospital_output
 from .pattern_factory import ThinkingPatternFactory, create_thinking_pattern
 from .pattern_policy import AdaptivePatternPolicy, StaticPatternPolicy
+from .simulation_runner import MultiHospitalSimulationResult, simulate_multi_hospital
 
 __all__ = [
 	"AgentPortfolio",
@@ -28,4 +29,6 @@ __all__ = [
 	"create_thinking_pattern",
 	"StaticPatternPolicy",
 	"AdaptivePatternPolicy",
+	"MultiHospitalSimulationResult",
+	"simulate_multi_hospital",
 ]
