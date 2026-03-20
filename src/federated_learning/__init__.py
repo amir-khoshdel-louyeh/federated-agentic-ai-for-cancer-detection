@@ -8,6 +8,7 @@ from .contracts import (
 	OrchestratorRoundOutput,
 )
 from .factory import build_aggregator, supported_aggregator_names
+from .orchestrator import FederatedRoundOrchestrator, HospitalFederatedClient
 from .validators import UpdateValidationError, ValidationReport, validate_local_update, validate_local_updates
 from .weighting import (
 	WeightComponents,
@@ -29,6 +30,8 @@ __all__ = [
 	"OrchestratorRoundOutput",
 	"build_aggregator",
 	"supported_aggregator_names",
+	"FederatedRoundOrchestrator",
+	"HospitalFederatedClient",
 	"UpdateValidationError",
 	"ValidationReport",
 	"validate_local_update",
