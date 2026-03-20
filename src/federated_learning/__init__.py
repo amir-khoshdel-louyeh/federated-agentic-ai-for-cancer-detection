@@ -7,6 +7,13 @@ from .contracts import (
 	OrchestratorRoundOutput,
 )
 from .validators import UpdateValidationError, ValidationReport, validate_local_update, validate_local_updates
+from .weighting import (
+	WeightComponents,
+	build_adaptive_weights,
+	compute_reliability_scores,
+	extract_quality_scores,
+	normalize_sample_size_weights,
+)
 
 __all__ = [
 	"AggregationOutput",
@@ -19,4 +26,9 @@ __all__ = [
 	"ValidationReport",
 	"validate_local_update",
 	"validate_local_updates",
+	"WeightComponents",
+	"build_adaptive_weights",
+	"compute_reliability_scores",
+	"extract_quality_scores",
+	"normalize_sample_size_weights",
 ]
