@@ -1,6 +1,7 @@
 """Single-hospital multi-agent package for initial implementation."""
 
 from .agent_portfolio import AgentPortfolio
+from .artifacts import save_hospital_artifacts
 from .contracts import (
 	AdaptivePatternPolicyContract,
 	HospitalDataBundle,
@@ -16,6 +17,7 @@ from .simulation_runner import MultiHospitalSimulationResult, simulate_multi_hos
 
 __all__ = [
 	"AgentPortfolio",
+	"save_hospital_artifacts",
 	"HospitalDataBundle",
 	"HospitalScope",
 	"HospitalLifecycleContract",

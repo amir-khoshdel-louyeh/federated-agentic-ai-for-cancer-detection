@@ -78,6 +78,7 @@ class HospitalNode(HospitalLifecycleContract):
 
         self.metrics_store["selected_patterns"] = self.scope.agent_portfolio.selected_patterns()
         self._validate_selected_patterns(self.metrics_store["selected_patterns"])
+        self.metrics_store["random_seed"] = int(getattr(self.dataset_handler, "random_state", 0))
         self.metrics_store["split_sizes"] = {
             "train": int(self.scope.data.x_train.shape[0]),
             "val": int(self.scope.data.x_val.shape[0]),
@@ -321,6 +322,7 @@ class HospitalNode(HospitalLifecycleContract):
             training_warnings=dict(self.metrics_store.get("training_warnings", {})),
             extra_metadata={
                 "adaptive_policy_applied": bool(self.metrics_store.get("adaptive_policy_applied", False)),
+                "random_seed": int(self.metrics_store.get("random_seed", 0)),
             },
         )
         self.scope.report_output = output
