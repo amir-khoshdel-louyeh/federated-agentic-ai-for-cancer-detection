@@ -1,4 +1,4 @@
-from .aggregators import FedAvgAggregator, FedProxAggregator
+from .aggregators import AdaptiveAggregator, FedAvgAggregator, FedProxAggregator
 from .contracts import (
 	AggregationOutput,
 	AggregatorContract,
@@ -20,6 +20,7 @@ __all__ = [
 	"AggregationOutput",
 	"AggregatorContract",
 	"BinaryMetrics",
+	"AdaptiveAggregator",
 	"FedAvgAggregator",
 	"FedProxAggregator",
 	"FederatedOrchestratorContract",
