@@ -2,102 +2,136 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import random
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
-from src.agents import (
-    AKIECAgent,
-    BCCAgent,
-    MelanomaAgent,
-    SCCAgent,
-    SkinCancerAgent,
-)
+from .artifacts import save_hospital_artifacts
 from .hospital_env import VirtualHospital
-from .meta_controller import LocalMetaController
-from .pattern_factory import create_thinking_pattern
+from .hospital_node import HospitalNode
+from .pattern_policy import StaticPatternPolicy
+from .simulation_runner import simulate_multi_hospital
+
+LOGGER = logging.getLogger("hospital_runner")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Single-hospital multi-agent training pipeline")
+    parser = argparse.ArgumentParser(description="HospitalNode thin runner")
     parser.add_argument("--ham-csv", required=True, help="Path to HAM10000 metadata CSV")
     parser.add_argument("--isic-csv", required=True, help="Path to ISIC 2019 labels CSV")
     parser.add_argument("--out-dir", default="outputs", help="Output directory")
+    parser.add_argument(
+        "--hospital-ids",
+        default="hospital_1,hospital_2,hospital_3",
+        help="Comma-separated hospital IDs",
+    )
+    parser.add_argument("--seed", type=int, default=42, help="Base random seed")
+    parser.add_argument(
+        "--simulate-multi",
+        action="store_true",
+        help="Run multi-hospital simulation and validate uniform contracts",
+    )
     return parser.parse_args()
 
 
-def eval_probs(y_true: np.ndarray, probs: np.ndarray) -> dict[str, float]:
-    preds = (probs >= 0.5).astype(int)
-    metrics = {
-        "accuracy": float(accuracy_score(y_true, preds)),
-        "f1": float(f1_score(y_true, preds, zero_division=0)),
-    }
+def _configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+
+def _set_reproducibility_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
     try:
-        metrics["auc"] = float(roc_auc_score(y_true, probs))
-    except ValueError:
-        metrics["auc"] = 0.5
-    return metrics
+        import torch
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except ImportError:
+        LOGGER.warning("Torch is not installed; skipped torch seed setup.")
 
 
-def _build_cancer_agents() -> list[SkinCancerAgent]:
-    # Cancer type is fixed per agent; pattern can be changed at runtime.
-    bcc_agent = BCCAgent(thinking_pattern=create_thinking_pattern("rule_based"))
-    scc_agent = SCCAgent(thinking_pattern=create_thinking_pattern("bayesian"))
-    melanoma_agent = MelanomaAgent(thinking_pattern=create_thinking_pattern("deep_learning"))
-    akiec_agent = AKIECAgent(thinking_pattern=create_thinking_pattern("rule_based"))
+def _parse_hospital_ids(raw_hospital_ids: str) -> list[str]:
+    ids = [item.strip() for item in raw_hospital_ids.split(",") if item.strip()]
+    if not ids:
+        raise ValueError("At least one hospital ID is required.")
+    return ids
 
-    # Example runtime switch without creating combination classes.
-    akiec_agent.set_thinking_pattern(create_thinking_pattern("rule_based_strict"))
 
-    return [bcc_agent, scc_agent, melanoma_agent, akiec_agent]
+def _run_single_hospital(
+    *,
+    hospital_id: str,
+    ham_csv: str,
+    isic_csv: str,
+    seed: int,
+) -> dict[str, object]:
+    hospital = HospitalNode(
+        hospital_id=hospital_id,
+        ham_metadata_csv=ham_csv,
+        isic_labels_csv=isic_csv,
+        dataset_handler=VirtualHospital(random_state=seed),
+        pattern_policy=StaticPatternPolicy(hospital_id=hospital_id),
+    )
+    hospital.initialize()
+    hospital.train()
+    hospital.evaluate()
+    return hospital.get_local_update()
 
 
 def main() -> None:
+    _configure_logging()
     args = parse_args()
+    _set_reproducibility_seed(args.seed)
 
-    hospital = VirtualHospital(random_state=42)
-    splits = hospital.load(args.ham_csv, args.isic_csv)
-
-    agents = _build_cancer_agents()
-
-    val_predictions: dict[str, np.ndarray] = {}
-    test_predictions: dict[str, np.ndarray] = {}
-    report: dict[str, dict[str, float]] = {}
-
-    for agent in agents:
-        agent.fit(splits.x_train, splits.y_train)
-        val_probs = agent.predict_proba(splits.x_val)
-        test_probs = agent.predict_proba(splits.x_test)
-
-        val_predictions[agent.name] = val_probs
-        test_predictions[agent.name] = test_probs
-        report[agent.name] = eval_probs(splits.y_test, test_probs)
-
-    controller = LocalMetaController()
-    scores = controller.fit_weights(splits.y_val, val_predictions)
-    ensemble_probs = controller.ensemble_predict(test_predictions)
-    report["ensemble"] = eval_probs(splits.y_test, ensemble_probs)
-
-    report["weights"] = {s.name: float(s.weight) for s in scores}
-
+    hospital_ids = _parse_hospital_ids(args.hospital_ids)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    (out_dir / "metrics.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    if args.simulate_multi and len(hospital_ids) < 2:
+        raise ValueError("--simulate-multi requires at least 2 hospital IDs.")
 
-    pred_df = pd.DataFrame(
-        {
-            "image_id": splits.test_ids,
-            "y_true": splits.y_test,
-            "ensemble_prob": ensemble_probs,
-            **{f"prob_{k}": v for k, v in test_predictions.items()},
+    if args.simulate_multi or len(hospital_ids) > 1:
+        result = simulate_multi_hospital(
+            ham_metadata_csv=args.ham_csv,
+            isic_labels_csv=args.isic_csv,
+            hospital_ids=hospital_ids,
+        )
+        outputs = result.hospital_outputs
+        consistency_report = result.consistency_report
+    else:
+        output = _run_single_hospital(
+            hospital_id=hospital_ids[0],
+            ham_csv=args.ham_csv,
+            isic_csv=args.isic_csv,
+            seed=args.seed,
+        )
+        outputs = {hospital_ids[0]: output}
+        consistency_report = {
+            "num_hospitals": 1,
+            "uniform_contract": True,
+            "schema_version": output.get("schema_version"),
         }
-    )
-    pred_df.to_csv(out_dir / "predictions.csv", index=False)
 
-    print(json.dumps(report, indent=2))
+    artifact_manifest: dict[str, dict[str, str]] = {}
+    for hospital_id, output in outputs.items():
+        saved_paths = save_hospital_artifacts(hospital_output=output, out_dir=out_dir)
+        artifact_manifest[hospital_id] = saved_paths
+
+        metadata = output.get("metadata", {})
+        LOGGER.info("Hospital %s seed=%s", hospital_id, metadata.get("extra", {}).get("random_seed"))
+        LOGGER.info("Hospital %s selected_patterns=%s", hospital_id, output.get("selected_patterns", {}))
+        LOGGER.info("Hospital %s summary=%s", hospital_id, output.get("local_summary", {}))
+
+    run_report = {
+        "consistency_report": consistency_report,
+        "artifacts": artifact_manifest,
+        "hospitals": outputs,
+    }
+    (out_dir / "multi_hospital_report.json").write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+
+    print(json.dumps({"consistency_report": consistency_report, "artifacts": artifact_manifest}, indent=2))
 
 
 if __name__ == "__main__":
