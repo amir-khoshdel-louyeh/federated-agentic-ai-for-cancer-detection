@@ -94,3 +94,15 @@ class HospitalLifecycleContract(ABC):
     @abstractmethod
     def export_update(self) -> dict[str, Any]:
         """Export local results/updates using a stable schema for federation."""
+
+    @abstractmethod
+    def get_local_update(self) -> dict[str, Any]:
+        """Return local update payload prepared for federated aggregation."""
+
+    @abstractmethod
+    def apply_global_update(self, global_state: Mapping[str, Any]) -> None:
+        """Apply aggregator-provided global state (stub until model syncing is added)."""
+
+    @abstractmethod
+    def get_metadata_for_aggregation(self) -> dict[str, Any]:
+        """Return compact metadata useful for aggregator weighting/routing logic."""

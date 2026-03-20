@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_auc_score
@@ -277,3 +277,24 @@ class HospitalNode(HospitalLifecycleContract):
         )
         self.scope.report_output = output
         return output
+
+    def get_local_update(self) -> dict[str, Any]:
+        """FL-ready alias for exporting local hospital updates."""
+        local_update = self.export_update()
+        self.metrics_store["last_local_update_exported"] = True
+        return local_update
+
+    def apply_global_update(self, global_state: Mapping[str, Any]) -> None:
+        """Store incoming global state stub until model parameter sync is introduced."""
+        self.metrics_store["last_global_state"] = dict(global_state)
+        self.metrics_store["global_update_applied"] = True
+
+    def get_metadata_for_aggregation(self) -> dict[str, Any]:
+        """Return compact metadata for federated aggregator-side decisions."""
+        return {
+            "hospital_id": self.hospital_id,
+            "split_sizes": dict(self.metrics_store.get("split_sizes", {})),
+            "selected_patterns": dict(self.metrics_store.get("selected_patterns", {})),
+            "lifecycle_state": str(self.metrics_store.get("lifecycle_state", "created")),
+            "schema_version": str(self.scope.report_output.get("schema_version", "1.0.0")),
+        }
