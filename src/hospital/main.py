@@ -225,6 +225,18 @@ def main() -> None:
     federation_report_path = out_dir / "federation_comparison.json"
     federation_report_path.write_text(json.dumps(federation_report, indent=2), encoding="utf-8")
 
+    federation_run_metadata = {
+        "selected_aggregation_algorithm": selected_algorithm,
+        "compare_all": bool(args.compare_all),
+        "algorithms_executed": federation_report["algorithms_executed"],
+        "config_path": str(Path(args.config)),
+    }
+    federation_run_metadata_path = out_dir / "federation_run_metadata.json"
+    federation_run_metadata_path.write_text(
+        json.dumps(federation_run_metadata, indent=2),
+        encoding="utf-8",
+    )
+
     LOGGER.info(
         "Federation mode=%s selected=%s algorithms=%s",
         federation_report["mode"],
@@ -237,6 +249,7 @@ def main() -> None:
         "artifacts": artifact_manifest,
         "hospitals": outputs,
         "federation": federation_report,
+        "federation_run_metadata": federation_run_metadata,
     }
     (out_dir / "multi_hospital_report.json").write_text(json.dumps(run_report, indent=2), encoding="utf-8")
 
@@ -248,6 +261,7 @@ def main() -> None:
                 "federation_mode": federation_report["mode"],
                 "algorithms_executed": federation_report["algorithms_executed"],
                 "federation_report": str(federation_report_path),
+                "federation_run_metadata": str(federation_run_metadata_path),
             },
             indent=2,
         )
