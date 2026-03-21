@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict, is_dataclass
 import json
 import logging
 import random
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import yaml
@@ -135,9 +136,33 @@ def _run_federation_comparison(
             required_schema_version=schema_version,
         )
         round_output = orchestrator.run_round(round_index=1, local_updates=local_updates)
+        round_history = orchestrator.get_round_history()
+        rounds = [
+            {
+                "round_index": item.round_index,
+                "global_metrics": dict(item.aggregation.global_metrics),
+                "hospital_weights": dict(item.aggregation.hospital_weights),
+                "dropped_updates": dict(item.aggregation.dropped_hospitals),
+                "warnings": _collect_federation_warnings(
+                    local_updates=local_updates,
+                    dropped_updates=item.aggregation.dropped_hospitals,
+                ),
+            }
+            for item in round_history
+        ]
+
+        aggregator_hyperparameters = _extract_aggregator_hyperparameters(orchestrator.aggregator)
         results[algorithm] = {
+            "selected_algorithm": algorithm,
+            "hyperparameters": aggregator_hyperparameters,
+            "rounds": rounds,
             "global_metrics": dict(round_output.aggregation.global_metrics),
             "hospital_weights": dict(round_output.aggregation.hospital_weights),
+            "dropped_updates": dict(round_output.aggregation.dropped_hospitals),
+            "warnings": _collect_federation_warnings(
+                local_updates=local_updates,
+                dropped_updates=round_output.aggregation.dropped_hospitals,
+            ),
             "details": dict(round_output.aggregation.details),
             "validation_report": dict(round_output.validation_report),
             "global_state": dict(round_output.global_state),
@@ -147,8 +172,33 @@ def _run_federation_comparison(
         "mode": "compare_all" if compare_all else "single",
         "selected_algorithm": selected_algorithm,
         "algorithms_executed": algorithms,
+        "num_rounds": 1,
         "results": results,
     }
+
+
+def _extract_aggregator_hyperparameters(aggregator: object) -> dict[str, Any]:
+    if is_dataclass(aggregator):
+        return asdict(aggregator)
+    return {}
+
+
+def _collect_federation_warnings(
+    *,
+    local_updates: Mapping[str, dict[str, Any]],
+    dropped_updates: Mapping[str, str],
+) -> list[str]:
+    warnings: list[str] = []
+    for hospital_id, payload in local_updates.items():
+        training_warnings = payload.get("metadata", {}).get("training_warnings", {})
+        if isinstance(training_warnings, dict):
+            for warning_message in training_warnings.values():
+                warnings.append(f"{hospital_id}: {warning_message}")
+
+    for hospital_id, reason in dropped_updates.items():
+        warnings.append(f"{hospital_id}: dropped update ({reason})")
+
+    return warnings
 
 
 def _run_single_hospital(
