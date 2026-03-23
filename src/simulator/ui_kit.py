@@ -170,3 +170,24 @@ def add_card(container: ttk.Frame, *, title: str, lines: list[str]) -> None:
 			wraplength=980,
 			justify="left",
 		).pack(anchor="w", pady=1)
+
+
+def add_workflow_section(container: ttk.Frame, *, title: str) -> ttk.Frame:
+	"""Add a labeled workflow section container and return its body frame for future inputs.
+	
+	Used to organize settings into workflow pipeline stages.
+	"""
+	section = ttk.Frame(container, style="Card.TFrame", padding=10)
+	section.pack(fill="x", padx=0, pady=(0, 8))
+
+	ttk.Label(
+		section,
+		text=title,
+		style="CardTitle.TLabel",
+		foreground=ACCENT,
+	).pack(anchor="w", pady=(0, 6))
+
+	body = ttk.Frame(section, style="App.TFrame")
+	body.pack(fill="both", expand=True, padx=4)
+
+	return body
