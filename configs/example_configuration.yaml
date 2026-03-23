@@ -1,0 +1,116 @@
+# ========================
+# DATA SOURCES
+# ========================
+ham_csv: data/raw/ham10000/HAM10000_metadata.csv
+isic_csv: data/raw/isic2019/ISIC_2019_Training_GroundTruth.csv
+out_dir: outputs
+
+# ========================
+# SYSTEM SETUP
+# ========================
+hospital_ids: hospital_1,hospital_2,hospital_3
+num_agents_per_hospital: 4
+seed: 42
+
+# ========================
+# FEDERATED LEARNING
+# ========================
+federation:
+  aggregation_algorithm: adaptive   # fedavg | fedprox | adaptive
+
+  fedprox:
+    mu: 0.1
+
+  adaptive:
+    # weighting between sources of trust
+    alpha: 0.5        # performance weight
+    beta: 0.3         # confidence weight
+    gamma: 0.2        # stability weight
+
+    # metric importance
+    auc_weight: 0.75
+    f1_weight: 0.25
+
+    # hospital-level weighting
+    hospital_weighting: dynamic   # static | dynamic
+
+# ========================
+# AGENT CONFIGURATION
+# ========================
+agents:
+  types:
+    - akiec_agent
+    - bcc_agent
+    - melanoma_agent
+    - scc_agent
+
+  patterns:
+    available:
+      - rule_based
+      - bayesian
+      - deep_learning
+      - hybrid
+
+    default_mapping:
+      BCC: hybrid
+      SCC: hybrid
+      MELANOMA: deep_learning
+      AKIEC: bayesian
+
+    allow_dynamic_switch: true   # 🔥 critical for agentic behavior
+
+# ========================
+# META-AGENT CONTROL
+# ========================
+meta_agent:
+  local:
+    enable: true
+    weighting_strategy: adaptive   # static | adaptive
+
+    score_function:
+      use_auc: true
+      use_f1: true
+      use_confidence: true
+
+  global:
+    enable: true
+    anomaly_detection: true
+    trust_reweighting: true
+
+# ========================
+# PRIVACY & SECURITY
+# ========================
+privacy:
+  differential_privacy:
+    enabled: true
+    epsilon: 1.0
+
+  secure_aggregation: true
+
+# ========================
+# TRACKING & LOGGING
+# ========================
+tracking:
+  track_per_agent: true
+  track_per_hospital: true
+  track_confidence: true
+  track_stability: true
+
+  save_logs: true
+  log_dir: outputs/logs
+
+# ========================
+# EXPERIMENT CONTROL
+# ========================
+simulation:
+  simulate_multi: true
+  compare_all: true     # compare fedavg, fedprox, adaptive
+  num_rounds: 20
+
+# ========================
+# OUTPUT CONTROL
+# ========================
+output:
+  save_global_model: true
+  save_local_models: false
+  save_metrics: true

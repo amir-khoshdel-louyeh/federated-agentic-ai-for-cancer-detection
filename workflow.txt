@@ -1,0 +1,94 @@
+┌────────────────────────────┐
+│        HOSPITAL i          │
+│   (Local Data Source)      │
+└────────────┬───────────────┘
+             │
+             ▼
+   ┌───────────────────────┐
+   │   Patient Data        │
+   │ (Images, Clinical)    │
+   └─────────┬─────────────┘
+             │
+             ▼
+   ┌──────────────────────────────────────┐
+   │        AGENTIC AI LAYER              │
+   │                                      |               
+       [each hospital has 4 agents (
+        akiec_agent,bcc_agent,melanoma_agent
+        ,scc_agent)]
+        and each agent can use one of the 
+        following thinking patterns:
+        bayesian_pattern
+        deep_learning_pattern
+        rule_based_pattern
+   
+   │                                      |
+   │  Predictions + Confidence Scores     │
+   └────────────┬─────────────────────────┘
+                │
+                ▼
+   ┌──────────────────────────────────────┐
+   │     LOCAL META-AGENT CONTROLLER      │
+   │--------------------------------------│
+   │ - Evaluates agents                   │
+   │ - Weights their outputs              │
+   │ - Builds Local Model Update          │
+   └────────────┬─────────────────────────┘
+                │
+                ▼
+   ┌──────────────────────────────────────┐
+   │   PRIVACY & SECURITY LAYER           │
+   │--------------------------------------│
+   │ - Differential Privacy (DP)          │
+   │ - Secure Aggregation Preparation     │
+   └────────────┬─────────────────────────┘
+                │
+                ▼
+      (ONLY MODEL UPDATES SHARED)
+                │
+════════════════╬════════════════════════════════
+                │
+                ▼
+   ┌──────────────────────────────────────┐
+   │     FEDERATED AGGREGATOR (SERVER)    │
+   │--------------------------------------│
+   │ Inputs: Updates from all hospitals   │
+   │                                      │
+   │ Aggregation Methods:                 │
+   │ - FedAvg                             │
+   │ - FedProx                            │
+   │ - Adaptive Aggregation               │
+   │   (based on agent confidence)        │
+   │                                      │
+   │ Output: Global Model                 │
+   └────────────┬─────────────────────────┘
+                │
+                ▼
+   ┌──────────────────────────────────────┐
+   │        GLOBAL MODEL                  │
+   │  (Shared Knowledge Across Hospitals) │
+   └────────────┬─────────────────────────┘
+                │
+                ▼
+   ┌──────────────────────────────────────┐
+   │   META-AGENT (GLOBAL CONTROLLER)     │
+   │--------------------------------------│
+   │ - Monitors hospital performance      │
+   │ - Adjusts weights / strategies       │
+   │ - Detects anomalies                  │
+   │ - Assigns better agents dynamically  │
+   └────────────┬─────────────────────────┘
+                │
+                ▼
+     (MODEL SENT BACK TO HOSPITALS)
+                │
+════════════════╬════════════════════════════════
+                │
+                ▼
+   ┌────────────────────────────┐
+   │   HOSPITAL i (UPDATE)      │
+   │----------------------------│
+   │ - Receives Global Model    │
+   │ - Improves Local Training  │
+   │ - Starts Next Round        │
+   └────────────────────────────┘

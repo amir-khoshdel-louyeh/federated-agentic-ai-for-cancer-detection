@@ -2,128 +2,266 @@
 
 import tkinter as tk
 from tkinter import ttk
+import yaml
+from pathlib import Path
 
-from ..ui_kit import add_workflow_section, build_scrollable_page
+from ..ui_kit import add_workflow_section
 
 
+# ========================
+# FIELD BUILDER
+# ========================
+def _add_field(parent, label, var, field_type="entry", options=None):
+	row = ttk.Frame(parent)
+	row.pack(fill="x", pady=2)
+
+	ttk.Label(row, text=label, width=22, anchor="w").pack(side="left")
+
+	if field_type == "entry":
+		widget = ttk.Entry(row, textvariable=var)
+		widget.pack(side="right", fill="x", expand=True)
+
+	elif field_type == "combo":
+		widget = ttk.Combobox(row, textvariable=var, values=options, state="readonly")
+		widget.pack(side="right", fill="x", expand=True)
+
+	elif field_type == "check":
+		widget = ttk.Checkbutton(row, variable=var)
+		widget.pack(side="right")
+
+	return var
+
+
+# ========================
+# MAIN TAB
+# ========================
 def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
-	"""Create and return the Configuration tab frame.
-
-	Layout:
-	- Whole page split into 2 vertical panels
-	- Left panel: 30% for workflow-based settings sections (scrollable)
-	- Right panel: 70% for future visualizations / graphics
-	
-	Workflow sections organized as in workflow.txt:
-	1. HOSPITAL (data sources, IDs)
-	2. PATIENT DATA (dataset paths, splits)
-	3. AGENTIC AI LAYER (agent patterns per cancer type)
-	4. LOCAL META-AGENT CONTROLLER (local ensemble settings)
-	5. PRIVACY & SECURITY LAYER (DP, aggregation prep)
-	6. Model Update Exchange marker
-	7. FEDERATED AGGREGATOR (algorithm choice, parameters)
-	8. GLOBAL MODEL (federation outcomes)
-	9. META-AGENT (GLOBAL CONTROLLER) (global monitoring)
-	10. Model Broadcast marker
-	"""
 	page = ttk.Frame(parent, style="App.TFrame")
-	page.grid_columnconfigure(0, weight=3, uniform="config_split")
-	page.grid_columnconfigure(1, weight=7, uniform="config_split")
+
+	# ========================
+	# LOAD CONFIG
+	# ========================
+	config_path = Path("config.yaml")
+	if config_path.exists():
+		with open(config_path, "r") as f:
+			config = yaml.safe_load(f)
+	else:
+		config = {}
+
+	# ========================
+	# SCROLLABLE LAYOUT
+	# ========================
+	canvas = tk.Canvas(page, highlightthickness=0, borderwidth=0, bg="#edf2f7")
+	scrollbar = ttk.Scrollbar(page, orient="vertical", command=canvas.yview)
+	canvas.configure(yscrollcommand=scrollbar.set)
+
+	canvas.grid(row=0, column=0, sticky="nsew")
+	scrollbar.grid(row=0, column=1, sticky="ns")
 	page.grid_rowconfigure(0, weight=1)
+	page.grid_columnconfigure(0, weight=1)
 
-	# Left panel: scrollable workflow section list
-	left_outer = ttk.Frame(page, style="App.TFrame")
-	left_outer.grid(row=0, column=0, sticky="nsew", padx=(14, 7), pady=14)
-	left_outer.grid_columnconfigure(0, weight=1)
-	left_outer.grid_rowconfigure(0, weight=1)
+	content = ttk.Frame(canvas, style="App.TFrame")
+	window = canvas.create_window((0, 0), window=content, anchor="nw")
 
-	left_canvas = tk.Canvas(left_outer, highlightthickness=0, borderwidth=0, bg="#edf2f7")
-	left_scrollbar = ttk.Scrollbar(left_outer, orient="vertical", command=left_canvas.yview)
-	left_content = ttk.Frame(left_canvas, style="App.TFrame")
+	def _on_content_configure(_: tk.Event):
+		canvas.configure(scrollregion=canvas.bbox("all"))
 
-	left_canvas.configure(yscrollcommand=left_scrollbar.set)
-	left_window = left_canvas.create_window((0, 0), window=left_content, anchor="nw")
+	def _on_canvas_configure(event: tk.Event):
+		canvas.itemconfigure(window, width=event.width)
 
-	def _on_left_content_configure(_: tk.Event) -> None:
-		left_canvas.configure(scrollregion=left_canvas.bbox("all"))
+	content.bind("<Configure>", _on_content_configure)
+	canvas.bind("<Configure>", _on_canvas_configure)
 
-	def _on_left_canvas_configure(event: tk.Event) -> None:
-		left_canvas.itemconfigure(left_window, width=event.width)
-
-	left_content.bind("<Configure>", _on_left_content_configure)
-	left_canvas.bind("<Configure>", _on_left_canvas_configure)
-
-	left_canvas.pack(side="left", fill="both", expand=True)
-	left_scrollbar.pack(side="right", fill="y")
-
-	# Bind mouse wheel to left content scrollbar
-	def _on_left_mousewheel(event: tk.Event) -> None:
+	def _on_mousewheel(event: tk.Event):
 		if getattr(event, "delta", 0):
-			left_canvas.yview_scroll(int(-event.delta / 120), "units")
-		elif getattr(event, "num", 0) == 4:
-			left_canvas.yview_scroll(-1, "units")
-		elif getattr(event, "num", 0) == 5:
-			left_canvas.yview_scroll(1, "units")
+			canvas.yview_scroll(int(-event.delta / 120), "units")
 
-	for widget in (left_outer, left_canvas, left_content):
-		widget.bind("<MouseWheel>", _on_left_mousewheel)
-		widget.bind("<Button-4>", _on_left_mousewheel)
-		widget.bind("<Button-5>", _on_left_mousewheel)
+	for widget in (page, canvas, content):
+		widget.bind_all("<MouseWheel>", _on_mousewheel, add="+")
 
-	# Add workflow sections to left content
-	hospital_section = add_workflow_section(left_content, title="HOSPITAL")
-	patient_data_section = add_workflow_section(left_content, title="PATIENT DATA")
-	agentic_ai_section = add_workflow_section(left_content, title="AGENTIC AI LAYER")
-	local_meta_section = add_workflow_section(left_content, title="LOCAL META-AGENT CONTROLLER")
-	privacy_section = add_workflow_section(left_content, title="PRIVACY & SECURITY LAYER")
+	def _set_fixed_height(frame, height=400):
+		frame.configure(height=height)
+		frame.pack_propagate(False)
 
-	# Model update divider
-	divider_1 = ttk.Label(
-		left_content,
-		text="▼ (ONLY MODEL UPDATES SHARED) ▼",
-		font=("DejaVu Sans", 8, "bold"),
-		foreground="#0f766e",
+	def _center_section_title(section_body):
+		section_frame = section_body.master
+		for child in section_frame.winfo_children():
+			if isinstance(child, ttk.Label):
+				child.configure(anchor="center", justify="center")
+				child.pack_configure(anchor="center", fill="x")
+
+	section_viz_frames = {}
+
+	def _add_pair_row(row, setting_title, viz_title, key=None):
+		setting_outer = ttk.Frame(content, style="App.TFrame")
+		setting_outer.grid(row=row, column=0, sticky="nsew", padx=(14, 7), pady=(0, 8))
+		setting_section = add_workflow_section(setting_outer, title=setting_title)
+		_center_section_title(setting_section)
+		_set_fixed_height(setting_section)
+
+		viz_outer = ttk.Frame(content, style="App.TFrame")
+		viz_outer.grid(row=row, column=1, sticky="nsew", padx=(7, 14), pady=(0, 8))
+
+		viz_label = ttk.Label(
+			viz_outer,
+			text=f"{viz_title} - VISUALIZATION",
+			font=("DejaVu Sans", 10, "bold"),
+			foreground="#0f766e",
+			anchor="center",
+		)
+		viz_label.pack(fill="x", pady=(0, 6))
+
+		viz_body = ttk.Frame(viz_outer, style="App.TFrame")
+		viz_body.pack(fill="x", expand=True)
+
+		_set_fixed_height(viz_body)
+
+		if key:
+			section_viz_frames[key] = viz_body
+
+		return setting_section, viz_body
+
+	def _add_divider_row(row, text):
+		ttk.Label(
+			content,
+			text=text,
+			font=("DejaVu Sans", 8, "bold"),
+			foreground="#0f766e",
+			anchor="center",
+		).grid(row=row, column=0, columnspan=2, sticky="ew", pady=(6, 4))
+
+	# ========================
+	# SECTIONS
+	# ========================
+	row = 0
+	hospital_section, _ = _add_pair_row(row, "HOSPITAL", "HOSPITAL")
+	row += 1
+	patient_section, _ = _add_pair_row(row, "PATIENT DATA", "PATIENT DATA")
+	row += 1
+	agent_section, _ = _add_pair_row(row, "AGENTIC AI LAYER", "AGENTIC AI LAYER")
+	row += 1
+	local_meta_section, _ = _add_pair_row(row, "LOCAL META-AGENT", "LOCAL META")
+	row += 1
+	privacy_section, _ = _add_pair_row(row, "PRIVACY", "PRIVACY")
+	row += 1
+
+	_add_divider_row(row, "▼ FEDERATION ▼")
+	row += 1
+
+	fed_section, _ = _add_pair_row(row, "FEDERATED AGGREGATOR", "FEDERATION")
+	row += 1
+	global_meta_section, _ = _add_pair_row(row, "GLOBAL META-AGENT", "GLOBAL META")
+
+	# ========================
+	# HOSPITAL
+	# ========================
+	hospital_vars = {}
+	hospital_vars["ham_csv"] = _add_field(hospital_section, "HAM CSV", tk.StringVar(value=config.get("ham_csv", "")))
+	hospital_vars["isic_csv"] = _add_field(hospital_section, "ISIC CSV", tk.StringVar(value=config.get("isic_csv", "")))
+	hospital_vars["out_dir"] = _add_field(hospital_section, "Output Dir", tk.StringVar(value=config.get("out_dir", "")))
+	hospital_vars["hospital_ids"] = _add_field(hospital_section, "Hospital IDs", tk.StringVar(value=config.get("hospital_ids", "")))
+	hospital_vars["num_agents"] = _add_field(hospital_section, "Agents", tk.IntVar(value=config.get("num_agents_per_hospital", 4)))
+	hospital_vars["seed"] = _add_field(hospital_section, "Seed", tk.IntVar(value=config.get("seed", 42)))
+
+	# ========================
+	# PATIENT
+	# ========================
+	patient_vars = {}
+	patient_vars["dataset_type"] = _add_field(
+		patient_section,
+		"Dataset",
+		tk.StringVar(value="HAM10000"),
+		"combo",
+		["HAM10000", "ISIC2019"],
 	)
-	divider_1.pack(fill="x", padx=8, pady=(6, 4))
 
-	federated_agg_section = add_workflow_section(left_content, title="FEDERATED AGGREGATOR (SERVER)")
-	global_model_section = add_workflow_section(left_content, title="GLOBAL MODEL")
-	global_meta_section = add_workflow_section(left_content, title="META-AGENT (GLOBAL CONTROLLER)")
+	# ========================
+	# AGENTS
+	# ========================
+	agents_cfg = config.get("agents", {})
+	patterns = agents_cfg.get("patterns", {}).get("default_mapping", {})
 
-	# Model broadcast divider
-	divider_2 = ttk.Label(
-		left_content,
-		text="▲ (MODEL SENT BACK TO HOSPITALS) ▲",
-		font=("DejaVu Sans", 8, "bold"),
-		foreground="#0f766e",
+	agent_vars = {}
+	agent_vars["switch"] = _add_field(
+		agent_section,
+		"Dynamic Switch",
+		tk.BooleanVar(value=agents_cfg.get("allow_dynamic_switch", True)),
+		"check",
 	)
-	divider_2.pack(fill="x", padx=8, pady=(6, 4))
 
-	# Right panel: visualization space
-	right_panel = ttk.Frame(page, style="Card.TFrame", padding=12)
-	right_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 14), pady=14)
-	right_panel.grid_columnconfigure(0, weight=1)
-	right_panel.grid_rowconfigure(0, weight=1)
+	for k in ["BCC", "SCC", "MELANOMA", "AKIEC"]:
+		agent_vars[k] = _add_field(
+			agent_section,
+			k,
+			tk.StringVar(value=patterns.get(k, "")),
+			"combo",
+			["rule_based", "bayesian", "deep_learning", "hybrid"],
+		)
 
-	# Placeholder for visualizations
-	viz_placeholder = ttk.Label(
-		right_panel,
-		text="Visualization & Live Updates Area\n(Right-click sections to edit)",
-		font=("DejaVu Sans", 11),
-		foreground="#4a5a67",
+	# ========================
+	# LOCAL META
+	# ========================
+	local_cfg = config.get("meta_agent", {}).get("local", {})
+	local_vars = {}
+	local_vars["enable"] = _add_field(local_meta_section, "Enable", tk.BooleanVar(value=local_cfg.get("enable", True)), "check")
+	local_vars["strategy"] = _add_field(
+		local_meta_section,
+		"Strategy",
+		tk.StringVar(value=local_cfg.get("weighting_strategy", "adaptive")),
+		"combo",
+		["static", "adaptive"],
 	)
-	viz_placeholder.place(relx=0.5, rely=0.5, anchor="center")
 
-	# Expose all section frames for next implementation steps
-	page.left_panel = left_content  # type: ignore[attr-defined]
-	page.right_panel = right_panel  # type: ignore[attr-defined]
-	page.hospital_section = hospital_section  # type: ignore[attr-defined]
-	page.patient_data_section = patient_data_section  # type: ignore[attr-defined]
-	page.agentic_ai_section = agentic_ai_section  # type: ignore[attr-defined]
-	page.local_meta_section = local_meta_section  # type: ignore[attr-defined]
-	page.privacy_section = privacy_section  # type: ignore[attr-defined]
-	page.federated_agg_section = federated_agg_section  # type: ignore[attr-defined]
-	page.global_model_section = global_model_section  # type: ignore[attr-defined]
-	page.global_meta_section = global_meta_section  # type: ignore[attr-defined]
+	# ========================
+	# PRIVACY
+	# ========================
+	privacy_cfg = config.get("privacy", {})
+	dp = privacy_cfg.get("differential_privacy", {})
+
+	privacy_vars = {}
+	privacy_vars["dp"] = _add_field(privacy_section, "DP Enabled", tk.BooleanVar(value=dp.get("enabled", True)), "check")
+	privacy_vars["epsilon"] = _add_field(privacy_section, "Epsilon", tk.DoubleVar(value=dp.get("epsilon", 1.0)))
+	privacy_vars["secure"] = _add_field(privacy_section, "Secure Agg", tk.BooleanVar(value=privacy_cfg.get("secure_aggregation", True)), "check")
+
+	# ========================
+	# FEDERATION
+	# ========================
+	fed_cfg = config.get("federation", {})
+	adaptive = fed_cfg.get("adaptive", {})
+
+	fed_vars = {}
+	fed_vars["algo"] = _add_field(
+		fed_section,
+		"Algorithm",
+		tk.StringVar(value=fed_cfg.get("aggregation_algorithm", "adaptive")),
+		"combo",
+		["fedavg", "fedprox", "adaptive"],
+	)
+
+	for k in ["alpha", "beta", "gamma"]:
+		fed_vars[k] = _add_field(fed_section, k, tk.DoubleVar(value=adaptive.get(k, 0)))
+
+	# ========================
+	# GLOBAL META
+	# ========================
+	global_cfg = config.get("meta_agent", {}).get("global", {})
+
+	global_vars = {}
+	global_vars["enable"] = _add_field(global_meta_section, "Enable", tk.BooleanVar(value=global_cfg.get("enable", True)), "check")
+	global_vars["anomaly"] = _add_field(global_meta_section, "Anomaly", tk.BooleanVar(value=global_cfg.get("anomaly_detection", True)), "check")
+	global_vars["trust"] = _add_field(global_meta_section, "Trust", tk.BooleanVar(value=global_cfg.get("trust_reweighting", True)), "check")
+
+	# ========================
+	# STORE ALL
+	# ========================
+	page.config_vars = {
+		"hospital": hospital_vars,
+		"patient": patient_vars,
+		"agent": agent_vars,
+		"local_meta": local_vars,
+		"privacy": privacy_vars,
+		"federation": fed_vars,
+		"global_meta": global_vars,
+	}
 
 	return page
