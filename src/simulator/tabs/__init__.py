@@ -1,7 +1,7 @@
 """Tab modules for simulator UI."""
 
 from .tab_configuration import build_configuration_tab
-from .tab_info import build_info_tab
+from .tab_information import build_info_tab
 from .tab_logs import build_logs_tab
 from .tab_results import build_results_tab
 from .tab_test import build_test_tab

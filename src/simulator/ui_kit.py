@@ -101,7 +101,33 @@ def build_scrollable_page(parent: ttk.Notebook) -> tuple[ttk.Frame, ttk.Frame]:
 	canvas.pack(side="left", fill="both", expand=True)
 	scrollbar.pack(side="right", fill="y")
 
+	def _is_descendant(widget: tk.Misc | None, ancestor: tk.Misc) -> bool:
+		current = widget
+		while current is not None:
+			if current == ancestor:
+				return True
+			parent_name = current.winfo_parent()
+			if not parent_name:
+				return False
+			try:
+				current = current.nametowidget(parent_name)
+			except tk.TclError:
+				return False
+		return False
+
 	def _on_mousewheel(event: tk.Event) -> None:
+		widget = getattr(event, "widget", None)
+		if not isinstance(widget, tk.Misc):
+			return
+		if not _is_descendant(widget, outer):
+			return
+
+		bbox = canvas.bbox("all")
+		if not bbox:
+			return
+		if (bbox[3] - bbox[1]) <= canvas.winfo_height():
+			return
+
 		if getattr(event, "delta", 0):
 			canvas.yview_scroll(int(-event.delta / 120), "units")
 		elif getattr(event, "num", 0) == 4:
@@ -109,10 +135,9 @@ def build_scrollable_page(parent: ttk.Notebook) -> tuple[ttk.Frame, ttk.Frame]:
 		elif getattr(event, "num", 0) == 5:
 			canvas.yview_scroll(1, "units")
 
-	for widget in (outer, canvas, content):
-		widget.bind("<MouseWheel>", _on_mousewheel)
-		widget.bind("<Button-4>", _on_mousewheel)
-		widget.bind("<Button-5>", _on_mousewheel)
+	outer.bind_all("<MouseWheel>", _on_mousewheel, add="+")
+	outer.bind_all("<Button-4>", _on_mousewheel, add="+")
+	outer.bind_all("<Button-5>", _on_mousewheel, add="+")
 
 	return outer, content
 
