@@ -4,6 +4,15 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk
 
+from .tabs import (
+	build_configuration_tab,
+	build_info_tab,
+	build_logs_tab,
+	build_results_tab,
+	build_test_tab,
+	build_train_tab,
+)
+
 
 def main() -> None:
 	root = tk.Tk()
@@ -25,18 +34,20 @@ def main() -> None:
 	notebook = ttk.Notebook(root, style=style_name)
 	notebook.pack(fill="both", expand=True, padx=10, pady=10)
 
-	# Create tabs
-	tab1 = ttk.Frame(notebook)
-	tab2 = ttk.Frame(notebook)
-	tab3 = ttk.Frame(notebook)
-	tab4 = ttk.Frame(notebook)
-	tab5 = ttk.Frame(notebook)
+	# Create tabs from dedicated modules.
+	tab_information = build_info_tab(notebook)
+	tab_configuration = build_configuration_tab(notebook)
+	tab_train = build_train_tab(notebook)
+	tab_test = build_test_tab(notebook)
+	tab_results = build_results_tab(notebook)
+	tab_logs = build_logs_tab(notebook)
 
-	notebook.add(tab1, text="tab1")
-	notebook.add(tab2, text="tab2")
-	notebook.add(tab3, text="tab3")
-	notebook.add(tab4, text="tab4")
-	notebook.add(tab5, text="tab5")
+	notebook.add(tab_information, text="Information")
+	notebook.add(tab_configuration, text="Configuration")
+	notebook.add(tab_train, text="Train")
+	notebook.add(tab_test, text="Test")
+	notebook.add(tab_results, text="Results")
+	notebook.add(tab_logs, text="Logs")
 
 	def _refresh_tab_widths(_: tk.Event | None = None) -> None:
 		"""Distribute tab widths so tabs always span the full notebook width."""
@@ -58,26 +69,6 @@ def main() -> None:
 	notebook.bind("<Configure>", _refresh_tab_widths)
 	notebook.bind("<<NotebookTabChanged>>", _refresh_tab_widths)
 	root.after(50, _refresh_tab_widths)
-
-	# Populate Tab 1
-	label1 = ttk.Label(tab1, text="content for tab 1")
-	label1.pack(padx=20, pady=20)
-
-	# Populate Tab 2
-	label2 = ttk.Label(tab2, text="content for tab 2")
-	label2.pack(padx=20, pady=20)
-
-	# Populate Tab 3
-	label3 = ttk.Label(tab3, text="content for tab 3")
-	label3.pack(padx=20, pady=20)
-
-	# Populate Tab 4
-	label4 = ttk.Label(tab4, text="content for tab 4")
-	label4.pack(padx=20, pady=20)
-
-	# Populate Tab 5
-	label5 = ttk.Label(tab5, text="content for tab 5")
-	label5.pack(padx=20, pady=20)
 
 	root.mainloop()
 
