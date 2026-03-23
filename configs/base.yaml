@@ -1,12 +1,4 @@
-"""Project entry point."""
-
-import os
-import runpy
-
-CONFIG_DIR = "configs"
-CONFIG_FILE = os.path.join(CONFIG_DIR, "base.yaml")
-
-DEFAULT_CONFIG = """# # ========================
+# # ========================
 # # DATA SOURCES
 # # ========================
 ham_csv: ''
@@ -108,22 +100,3 @@ output:
   save_global_model: true
   save_local_models: false
   save_metrics: true
-"""
-
-def ensure_config():
-    # اگر پوشه نبود بساز
-    if not os.path.exists(CONFIG_DIR):
-        os.makedirs(CONFIG_DIR)
-
-    # اگر فایل نبود بساز
-    if not os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "w") as f:
-            f.write(DEFAULT_CONFIG)
-        print("✅ base.yaml created in configs/")
-    else:
-        print("✔ base.yaml already exists")
-
-
-if __name__ == "__main__":
-    ensure_config()
-    runpy.run_module("src.simulator.simulator", run_name="__main__")
