@@ -1,14 +1,14 @@
 # ========================
 # DATA SOURCES
 # ========================
-ham_csv: data/raw/ham10000/HAM10000_metadata.csv
-isic_csv: data/raw/isic2019/ISIC_2019_Training_GroundTruth.csv
+ham_csv: 
+isic_csv: 
 out_dir: outputs
 
 # ========================
 # SYSTEM SETUP
 # ========================
-hospital_ids: hospital_1,hospital_2,hospital_3
+hospital_ids: hospital_1
 num_agents_per_hospital: 4
 seed: 42
 
@@ -16,7 +16,7 @@ seed: 42
 # FEDERATED LEARNING
 # ========================
 federation:
-  aggregation_algorithm: adaptive   # fedavg | fedprox | adaptive
+  aggregation_algorithm: fedavg   # fedavg | fedprox | adaptive
 
   fedprox:
     mu: 0.1
