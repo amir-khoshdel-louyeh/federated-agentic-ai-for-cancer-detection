@@ -39,6 +39,21 @@ def _add_field(parent, label, var, field_type="entry", options=None):
 def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 	page = ttk.Frame(parent, style="App.TFrame")
 
+	# Add custom button styles for color
+	style = ttk.Style()
+	style.configure("Colored.TButton", background="#0f766e", foreground="#ffffff", font=("DejaVu Sans", 10, "bold"))
+	style.map(
+		"Colored.TButton",
+		background=[("active", "#115e59"), ("pressed", "#0d4d4d")],
+		foreground=[("active", "#ffffff"), ("pressed", "#ffffff")],
+	)
+	style.configure("Danger.TButton", background="#be123c", foreground="#ffffff", font=("DejaVu Sans", 10, "bold"))
+	style.map(
+		"Danger.TButton",
+		background=[("active", "#991b1b"), ("pressed", "#7f1d1d")],
+		foreground=[("active", "#ffffff"), ("pressed", "#ffffff")],
+	)
+
 	# ========================
 	# LOAD CONFIG
 	# ========================
@@ -289,9 +304,9 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 			hospital_vars["hospital_ids"].set(", ".join(ids))
 		update_hospital_count()
 
-	add_btn = ttk.Button(button_frame, text="Add Hospital", command=add_hospital, style="Accent.TButton")
+	add_btn = ttk.Button(button_frame, text="Add Hospital", command=add_hospital, style="Colored.TButton")
 	add_btn.pack(side="left", padx=6, ipadx=8, ipady=2)
-	remove_btn = ttk.Button(button_frame, text="Remove Hospital", command=remove_hospital)
+	remove_btn = ttk.Button(button_frame, text="Remove Hospital", command=remove_hospital, style="Danger.TButton")
 	remove_btn.pack(side="left", padx=6, ipadx=8, ipady=2)
 
 	# Update count when hospital_ids changes (manual and programmatic)
@@ -348,6 +363,28 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		"check",
 	)
 
+	# Agent Types (multi-select listbox)
+	agent_types = agents_cfg.get("types", ["akiec_agent", "bcc_agent", "melanoma_agent", "scc_agent"])
+	agent_types_var = tk.Variable(value=agent_types)
+	ttk.Label(agent_section, text="Agent Types", anchor="w").pack(fill="x", padx=2, pady=(8,2))
+	agent_types_listbox = tk.Listbox(agent_section, listvariable=agent_types_var, selectmode="multiple", height=4, exportselection=False)
+	for i, t in enumerate(["akiec_agent", "bcc_agent", "melanoma_agent", "scc_agent"]):
+		if t in agent_types:
+			agent_types_listbox.selection_set(i)
+	agent_types_listbox.pack(fill="x", padx=8, pady=(0,8))
+	agent_vars["types_listbox"] = agent_types_listbox
+
+	# Patterns Available (multi-select listbox)
+	patterns_available = agents_cfg.get("patterns", {}).get("available", ["rule_based", "bayesian", "deep_learning", "hybrid"])
+	patterns_available_var = tk.Variable(value=patterns_available)
+	ttk.Label(agent_section, text="Patterns Available", anchor="w").pack(fill="x", padx=2, pady=(8,2))
+	patterns_available_listbox = tk.Listbox(agent_section, listvariable=patterns_available_var, selectmode="multiple", height=4, exportselection=False)
+	for i, t in enumerate(["rule_based", "bayesian", "deep_learning", "hybrid"]):
+		if t in patterns_available:
+			patterns_available_listbox.selection_set(i)
+	patterns_available_listbox.pack(fill="x", padx=8, pady=(0,8))
+	agent_vars["patterns_available_listbox"] = patterns_available_listbox
+
 	for k in ["BCC", "SCC", "MELANOMA", "AKIEC"]:
 		agent_vars[k] = _add_field(
 			agent_section,
@@ -370,6 +407,16 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		"combo",
 		["static", "adaptive"],
 	)
+	# Score Function checkboxes
+	score_cfg = local_cfg.get("score_function", {})
+	local_vars["use_auc"] = tk.BooleanVar(value=score_cfg.get("use_auc", True))
+	local_vars["use_f1"] = tk.BooleanVar(value=score_cfg.get("use_f1", True))
+	local_vars["use_confidence"] = tk.BooleanVar(value=score_cfg.get("use_confidence", True))
+	score_frame = ttk.LabelFrame(local_meta_section, text="Score Function", padding=(8,4))
+	score_frame.pack(fill="x", padx=4, pady=(8,4))
+	ttk.Checkbutton(score_frame, text="Use AUC", variable=local_vars["use_auc"]).pack(anchor="w", padx=6, pady=2)
+	ttk.Checkbutton(score_frame, text="Use F1", variable=local_vars["use_f1"]).pack(anchor="w", padx=6, pady=2)
+	ttk.Checkbutton(score_frame, text="Use Confidence", variable=local_vars["use_confidence"]).pack(anchor="w", padx=6, pady=2)
 
 	# ========================
 	# PRIVACY
@@ -405,6 +452,13 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 	fed_vars["gamma"] = _add_field(fed_section, "gamma", tk.DoubleVar(value=adaptive.get("gamma", 0.2)))
 	fed_vars["auc_weight"] = _add_field(fed_section, "AUC Weight", tk.DoubleVar(value=adaptive.get("auc_weight", 0.75)))
 	fed_vars["f1_weight"] = _add_field(fed_section, "F1 Weight", tk.DoubleVar(value=adaptive.get("f1_weight", 0.25)))
+	fed_vars["hospital_weighting"] = _add_field(
+		fed_section,
+		"Hospital Weighting",
+		tk.StringVar(value=adaptive.get("hospital_weighting", "dynamic")),
+		"combo",
+		["static", "dynamic"],
+	)
 
 	# ========================
 	# GLOBAL META
@@ -418,10 +472,10 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 
 	
 
-	# ========================
-	# Missed Settings (Redesigned)
-	# ========================
 
+	# ========================
+	# Missed Settings (Redesigned) with Tracking & Logging
+	# ========================
 	missed_section = ttk.LabelFrame(content, text="Other Settings", style="App.TLabelframe")
 	missed_section.grid(row=row+1, column=0, columnspan=2, sticky="ew", padx=18, pady=(12, 8))
 
@@ -468,6 +522,33 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		ttk.Label(missed_section, text=explanation, font=("DejaVu Sans", 8), wraplength=320, anchor="w", justify="left").grid(row=out_start+1+j, column=2, sticky="w", padx=(6,2))
 		output_vars[key] = var
 
+	# Tracking & Logging section header
+	track_start = out_start + len(output_settings) + 2
+	track_header = ttk.Label(missed_section, text="Tracking & Logging", font=("DejaVu Sans", 9, "bold"), foreground="#0f766e")
+	track_header.grid(row=track_start, column=0, columnspan=3, sticky="w", padx=4, pady=(10, 2))
+
+	# Tracking & Logging settings and explanations
+	tracking_vars = {}
+	tracking_cfg = config.get("tracking", {})
+	tracking_settings = [
+		("track_per_agent", "Track Per Agent", tk.BooleanVar(value=tracking_cfg.get("track_per_agent", True)), "check", "Track metrics for each agent individually."),
+		("track_per_hospital", "Track Per Hospital", tk.BooleanVar(value=tracking_cfg.get("track_per_hospital", True)), "check", "Track metrics for each hospital as a whole."),
+		("track_confidence", "Track Confidence", tk.BooleanVar(value=tracking_cfg.get("track_confidence", True)), "check", "Track model confidence scores during evaluation."),
+		("track_stability", "Track Stability", tk.BooleanVar(value=tracking_cfg.get("track_stability", True)), "check", "Track stability of model predictions over rounds."),
+		("save_logs", "Save Logs", tk.BooleanVar(value=tracking_cfg.get("save_logs", True)), "check", "Save detailed logs of the simulation run."),
+		("log_dir", "Log Directory", tk.StringVar(value=tracking_cfg.get("log_dir", "outputs/logs")), "entry", "Directory where logs will be saved.")
+	]
+	for k, (key, label, var, field_type, explanation) in enumerate(tracking_settings):
+		ttk.Label(missed_section, text=label, width=18, anchor="w").grid(row=track_start+1+k, column=0, sticky="w", padx=(8,2), pady=2)
+		if field_type == "check":
+			widget = ttk.Checkbutton(missed_section, variable=var)
+			widget.grid(row=track_start+1+k, column=1, sticky="w", padx=(0,2))
+		else:
+			widget = ttk.Entry(missed_section, textvariable=var, width=18)
+			widget.grid(row=track_start+1+k, column=1, sticky="w", padx=(0,2))
+		ttk.Label(missed_section, text=explanation, font=("DejaVu Sans", 8), wraplength=320, anchor="w", justify="left").grid(row=track_start+1+k, column=2, sticky="w", padx=(6,2))
+		tracking_vars[key] = var
+
 	# ========================
 	# STORE ALL
 	# ========================
@@ -481,6 +562,7 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		"global_meta": global_vars,
 		"simulation": simulation_vars,
 		"output": output_vars,
+		"tracking": tracking_vars,
 	}
 	# ========================
 	# save / load configuration
@@ -550,17 +632,31 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		d.yaml_set_comment_before_after_key('federation', before="\n# ========================\n# FEDERATED LEARNING\n# ========================")
 		federation = CommentedMap()
 		federation['aggregation_algorithm'] = fed_vars['algo'].get()
+		fedprox = CommentedMap()
+		fedprox['mu'] = fed_vars['mu'].get()
+		federation['fedprox'] = fedprox
 		adaptive = CommentedMap()
 		adaptive['alpha'] = fed_vars['alpha'].get()
 		adaptive['beta'] = fed_vars['beta'].get()
 		adaptive['gamma'] = fed_vars['gamma'].get()
+		adaptive['auc_weight'] = fed_vars['auc_weight'].get()
+		adaptive['f1_weight'] = fed_vars['f1_weight'].get()
+		adaptive['hospital_weighting'] = fed_vars['hospital_weighting'].get()
 		federation['adaptive'] = adaptive
 		d['federation'] = federation
 
 		# AGENT CONFIGURATION
 		d.yaml_set_comment_before_after_key('agents', before="\n# ========================\n# AGENT CONFIGURATION\n# ========================")
 		agents = CommentedMap()
+		# Save agent types from listbox
+		selected_types = ["akiec_agent", "bcc_agent", "melanoma_agent", "scc_agent"]
+		types_selected = [selected_types[i] for i in agent_vars["types_listbox"].curselection()]
+		agents['types'] = types_selected
 		patterns = CommentedMap()
+		# Save patterns available from listbox
+		all_patterns = ["rule_based", "bayesian", "deep_learning", "hybrid"]
+		patterns_selected = [all_patterns[i] for i in agent_vars["patterns_available_listbox"].curselection()]
+		patterns['available'] = patterns_selected
 		patterns['default_mapping'] = CommentedMap({k: agent_vars[k].get() for k in ["BCC", "SCC", "MELANOMA", "AKIEC"]})
 		patterns['allow_dynamic_switch'] = agent_vars['switch'].get()
 		agents['patterns'] = patterns
@@ -572,6 +668,11 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		local = CommentedMap()
 		local['enable'] = local_vars['enable'].get()
 		local['weighting_strategy'] = local_vars['strategy'].get()
+		score_function = CommentedMap()
+		score_function['use_auc'] = local_vars['use_auc'].get()
+		score_function['use_f1'] = local_vars['use_f1'].get()
+		score_function['use_confidence'] = local_vars['use_confidence'].get()
+		local['score_function'] = score_function
 		meta_agent['local'] = local
 		global_m = CommentedMap()
 		global_m['enable'] = global_vars['enable'].get()
@@ -589,6 +690,17 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		privacy['differential_privacy'] = dp
 		privacy['secure_aggregation'] = privacy_vars['secure'].get()
 		d['privacy'] = privacy
+
+		# TRACKING & LOGGING
+		d.yaml_set_comment_before_after_key('tracking', before="\n# ========================\n# TRACKING & LOGGING\n# ========================")
+		tracking = CommentedMap()
+		tracking['track_per_agent'] = tracking_vars['track_per_agent'].get()
+		tracking['track_per_hospital'] = tracking_vars['track_per_hospital'].get()
+		tracking['track_confidence'] = tracking_vars['track_confidence'].get()
+		tracking['track_stability'] = tracking_vars['track_stability'].get()
+		tracking['save_logs'] = tracking_vars['save_logs'].get()
+		tracking['log_dir'] = tracking_vars['log_dir'].get()
+		d['tracking'] = tracking
 
 		# SIMULATION (Missed Settings)
 		d.yaml_set_comment_before_after_key('simulation', before="\n# ========================\n# EXPERIMENT CONTROL\n# ========================")
@@ -615,6 +727,14 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 			mb.showerror("Save Failed", f"Failed to save configuration:\n{e}")
 
 	def load_config():
+		# Set tracking
+		tracking = loaded.get("tracking", {})
+		tracking_vars["track_per_agent"].set(tracking.get("track_per_agent", True))
+		tracking_vars["track_per_hospital"].set(tracking.get("track_per_hospital", True))
+		tracking_vars["track_confidence"].set(tracking.get("track_confidence", True))
+		tracking_vars["track_stability"].set(tracking.get("track_stability", True))
+		tracking_vars["save_logs"].set(tracking.get("save_logs", True))
+		tracking_vars["log_dir"].set(tracking.get("log_dir", "outputs/logs"))
 		config_path = Path("config.yaml")
 		if not config_path.exists():
 			return
@@ -630,14 +750,31 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		patient_vars["out_dir"].set(loaded.get("out_dir", ""))
 		# Set agents
 		agents = loaded.get("agents", {})
+		# Load agent types into listbox
+		types_loaded = agents.get("types", ["akiec_agent", "bcc_agent", "melanoma_agent", "scc_agent"])
+		agent_vars["types_listbox"].selection_clear(0, "end")
+		for i, t in enumerate(["akiec_agent", "bcc_agent", "melanoma_agent", "scc_agent"]):
+			if t in types_loaded:
+				agent_vars["types_listbox"].selection_set(i)
 		agent_vars["switch"].set(agents.get("allow_dynamic_switch", True))
-		patterns = agents.get("patterns", {}).get("default_mapping", {})
+		patterns_dict = agents.get("patterns", {})
+		# Load patterns available into listbox
+		available_loaded = patterns_dict.get("available", ["rule_based", "bayesian", "deep_learning", "hybrid"])
+		agent_vars["patterns_available_listbox"].selection_clear(0, "end")
+		for i, t in enumerate(["rule_based", "bayesian", "deep_learning", "hybrid"]):
+			if t in available_loaded:
+				agent_vars["patterns_available_listbox"].selection_set(i)
+		patterns = patterns_dict.get("default_mapping", {})
 		for k in ["BCC", "SCC", "MELANOMA", "AKIEC"]:
 			agent_vars[k].set(patterns.get(k, ""))
 		# Set local meta
 		local = loaded.get("meta_agent", {}).get("local", {})
 		local_vars["enable"].set(local.get("enable", True))
 		local_vars["strategy"].set(local.get("weighting_strategy", "adaptive"))
+		score = local.get("score_function", {})
+		local_vars["use_auc"].set(score.get("use_auc", True))
+		local_vars["use_f1"].set(score.get("use_f1", True))
+		local_vars["use_confidence"].set(score.get("use_confidence", True))
 		# Set privacy
 		privacy = loaded.get("privacy", {})
 		dp = privacy.get("differential_privacy", {})
@@ -647,9 +784,12 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		# Set federation
 		federation = loaded.get("federation", {})
 		fed_vars["algo"].set(federation.get("aggregation_algorithm", "adaptive"))
+		fedprox = federation.get("fedprox", {})
+		fed_vars["mu"].set(fedprox.get("mu", 0.1))
 		adaptive = federation.get("adaptive", {})
-		for k in ["alpha", "beta", "gamma"]:
+		for k in ["alpha", "beta", "gamma", "auc_weight", "f1_weight"]:
 			fed_vars[k].set(adaptive.get(k, 0))
+		fed_vars["hospital_weighting"].set(adaptive.get("hospital_weighting", "dynamic"))
 		# Set global meta
 		global_meta = loaded.get("meta_agent", {}).get("global", {})
 		global_vars["enable"].set(global_meta.get("enable", True))
@@ -669,9 +809,9 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 	# Add Save/Load buttons at the very bottom (after Missed Settings)
 	button_frame = ttk.Frame(content)
 	button_frame.grid(row=row+2, column=0, columnspan=2, pady=(16, 8))
-	save_btn = ttk.Button(button_frame, text="Save Configuration", command=save_config)
+	save_btn = ttk.Button(button_frame, text="Save Configuration", command=save_config, style="Colored.TButton")
 	save_btn.pack(side="left", padx=8)
-	load_btn = ttk.Button(button_frame, text="Load Configuration", command=load_config)
+	load_btn = ttk.Button(button_frame, text="Load Configuration", command=load_config, style="Colored.TButton")
 	load_btn.pack(side="left", padx=8)
 
 	return page
