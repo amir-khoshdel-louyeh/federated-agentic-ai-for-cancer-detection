@@ -15,7 +15,41 @@ from .tabs import (
 from .ui_kit import configure_app_style
 
 
+
+import os
+import logging
+import yaml
+
 def main() -> None:
+	# Load config for logging control
+	config_path = "config.yaml"
+	config = {}
+	if os.path.exists(config_path):
+		with open(config_path, "r") as f:
+			config = yaml.safe_load(f) or {}
+	tracking = config.get("tracking", {})
+	save_logs = tracking.get("save_logs", True)
+	log_dir = tracking.get("log_dir", "outputs/logs")
+	log_file = os.path.join(log_dir, "simulation.log")
+
+	# Configure logging
+	if save_logs:
+		os.makedirs(log_dir, exist_ok=True)
+		logging.basicConfig(
+			level=logging.INFO,
+			format="%(asctime)s | %(levelname)s | %(message)s",
+			handlers=[
+				logging.FileHandler(log_file, encoding="utf-8"),
+				logging.StreamHandler()
+			]
+		)
+	else:
+		logging.basicConfig(
+			level=logging.INFO,
+			format="%(asctime)s | %(levelname)s | %(message)s",
+			handlers=[logging.StreamHandler()]
+		)
+
 	root = tk.Tk()
 	root.title("Federated Agentic AI")
 
