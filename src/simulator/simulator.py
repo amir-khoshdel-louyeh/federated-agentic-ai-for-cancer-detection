@@ -12,6 +12,7 @@ from .tabs import (
 	build_test_tab,
 	build_train_tab,
 )
+from .ui_kit import configure_app_style
 
 
 def main() -> None:
@@ -24,10 +25,7 @@ def main() -> None:
 	except tk.TclError:
 		pass
 	root.geometry(f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}+0+0")
-	root.configure(bg="#525252")
-	style = ttk.Style(root)
-	style_name = "Expanded.TNotebook"
-	style.configure(style_name)
+	style, style_name = configure_app_style(root)
 	style.configure(f"{style_name}.Tab", anchor="center")
 
 	# Create notebook (tab container)
