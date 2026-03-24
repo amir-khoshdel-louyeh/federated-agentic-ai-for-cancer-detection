@@ -69,10 +69,21 @@ def build_logs_tab(parent: ttk.Notebook) -> ttk.Frame:
 	yscroll.pack(side="right", fill="y")
 	log_text.config(yscrollcommand=yscroll.set)
 
-	# Load logs from file (default: outputs/logs/simulation.log)
+	# Load log directory and file name from configs/config.yaml
 	import os
-	log_dir = "outputs/logs"
-	log_file = os.path.join(log_dir, "simulation.log")
+	import yaml
+	config_path = os.path.join("configs", "config.yaml")
+	if not os.path.exists(config_path):
+		log_dir = "outputs/logs"
+		log_file_name = "simulation.log"
+	else:
+		with open(config_path, "r") as f:
+			config = yaml.safe_load(f)
+		tracking = config.get("tracking", {})
+		log_dir = tracking.get("log_dir", "outputs/logs")
+		log_file_name = tracking.get("log_file_name", "simulation.log")
+
+	log_file = os.path.join(log_dir, log_file_name)
 
 	def read_logs():
 		if not os.path.exists(log_file):

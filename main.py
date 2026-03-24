@@ -83,6 +83,7 @@ privacy:
   secure_aggregation: true
 
 # # ========================
+
 # # TRACKING & LOGGING
 # # ========================
 tracking:
@@ -92,6 +93,7 @@ tracking:
   track_stability: true
   save_logs: true
   log_dir: outputs/logs
+  log_file_name: simulation.log
 
 # # ========================
 # # EXPERIMENT CONTROL
