@@ -55,88 +55,16 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 	)
 
 	# ========================
-	# LOAD CONFIG
+	# LOAD CONFIG (always from configs/config.yaml)
 	# ========================
-	config_path = Path("config.yaml")
-	if config_path.exists():
-		with open(config_path, "r") as f:
-			config = yaml.safe_load(f)
-	else:
-		config = {}
+	config_path = Path("configs/config.yaml")
+	if not config_path.exists():
+		import tkinter.messagebox as mb
+		mb.showerror("Missing config.yaml", "The configuration file 'configs/config.yaml' was not found. Please ensure it exists in the configs directory.")
+		return page
 
-	# ========================
-	# EXPERIMENT CONTROL DEFAULTS
-	# ========================
-	if "simulation" not in config:
-		config["simulation"] = {}
-	if "simulate_multi" not in config["simulation"]:
-		config["simulation"]["simulate_multi"] = True
-	if "compare_all" not in config["simulation"]:
-		config["simulation"]["compare_all"] = True
-	if "num_rounds" not in config["simulation"]:
-		config["simulation"]["num_rounds"] = 20
-
-	# ========================
-	# OUTPUT CONTROL DEFAULTS
-	# ========================
-	if "output" not in config:
-		config["output"] = {}
-	if "save_global_model" not in config["output"]:
-		config["output"]["save_global_model"] = True
-	if "save_local_models" not in config["output"]:
-		config["output"]["save_local_models"] = False
-	if "save_metrics" not in config["output"]:
-		config["output"]["save_metrics"] = True
-
-	# ========================
-	# LOGGING DEFAULTS
-	# ========================
-	if "save_logs" not in config:
-		config["save_logs"] = True
-	if "log_dir" not in config:
-		config["log_dir"] = "outputs/logs"
-
-	# ========================
-	# PRIVACY DEFAULTS
-	# ========================
-	if "privacy" not in config:
-		config["privacy"] = {}
-	if "differential_privacy" not in config["privacy"]:
-		config["privacy"]["differential_privacy"] = {}
-	if "enabled" not in config["privacy"]["differential_privacy"]:
-		config["privacy"]["differential_privacy"]["enabled"] = True
-	if "epsilon" not in config["privacy"]["differential_privacy"]:
-		config["privacy"]["differential_privacy"]["epsilon"] = 1.0
-
-	# ========================
-	# AGENT DEFAULTS
-	# ========================
-	# Set agent types, available patterns, and default mapping if not present
-	if "agents" not in config:
-		config["agents"] = {}
-	if "types" not in config["agents"]:
-		config["agents"]["types"] = [
-			"akiec_agent",
-			"bcc_agent",
-			"melanoma_agent",
-			"scc_agent"
-		]
-	if "patterns" not in config["agents"]:
-		config["agents"]["patterns"] = {}
-	if "available" not in config["agents"]["patterns"]:
-		config["agents"]["patterns"]["available"] = [
-			"rule_based",
-			"bayesian",
-			"deep_learning",
-			"hybrid"
-		]
-	if "default_mapping" not in config["agents"]["patterns"]:
-		config["agents"]["patterns"]["default_mapping"] = {
-			"BCC": "hybrid",
-			"SCC": "hybrid",
-			"MELANOMA": "deep_learning",
-			"AKIEC": "bayesian"
-		}
+	with open(config_path, "r") as f:
+		config = yaml.safe_load(f)
 
 	# ========================
 	# SCROLLABLE LAYOUT
@@ -735,7 +663,7 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		tracking_vars["track_stability"].set(tracking.get("track_stability", True))
 		tracking_vars["save_logs"].set(tracking.get("save_logs", True))
 		tracking_vars["log_dir"].set(tracking.get("log_dir", "outputs/logs"))
-		config_path = Path("config.yaml")
+		config_path = Path("configs/config.yaml")
 		if not config_path.exists():
 			return
 		with open(config_path, "r") as f:
