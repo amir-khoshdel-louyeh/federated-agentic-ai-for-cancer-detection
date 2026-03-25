@@ -65,11 +65,15 @@ class LocalHospitalData:
         raise ValueError(f"Unsupported split: {split}. Supported: {', '.join(SPLIT_NAMES)}")
 
 
+
 class LocalDataPipeline:
     """Builds standardized local splits and exposes per-cancer filtering hooks."""
 
-    def __init__(self, dataset_handler: VirtualHospital | None = None) -> None:
+    def __init__(self, dataset_handler: VirtualHospital | None = None, hospital_id: str = None, config: dict = None, hospital_ids: list = None) -> None:
         self.dataset_handler = dataset_handler or VirtualHospital(random_state=42)
+        self.hospital_id = hospital_id
+        self.config = config
+        self.hospital_ids = hospital_ids
 
     def load(
         self,
@@ -82,6 +86,34 @@ class LocalDataPipeline:
         if isic_labels_csv is not None:
             kwargs["isic_labels_csv"] = isic_labels_csv
         splits = self.dataset_handler.load(**kwargs)
+
+        # --- Sample allocation logic ---
+        if self.config is not None and self.hospital_id is not None and self.hospital_ids is not None:
+            total_samples = self.config.get("sampling", {}).get("total_samples", None)
+            assignment = self.config.get("sampling", {}).get("hospital_sample_assignment", "even")
+            if total_samples is not None:
+                num_hospitals = len(self.hospital_ids)
+                all_indices = np.arange(splits.x_train.shape[0])
+                rng = np.random.default_rng(self.config.get("sampling", {}).get("random_seed", 42))
+                if assignment == "even":
+                    base = total_samples // num_hospitals
+                    remainder = total_samples % num_hospitals
+                    idx = self.hospital_ids.index(self.hospital_id)
+                    n_samples = base + (1 if idx < remainder else 0)
+                elif assignment == "random":
+                    # Randomly assign samples to hospitals
+                    allocation = rng.choice(num_hospitals, size=total_samples, replace=True)
+                    n_samples = np.sum(allocation == self.hospital_ids.index(self.hospital_id))
+                else:
+                    n_samples = None
+                # Subsample for this hospital
+                if n_samples and n_samples < splits.x_train.shape[0]:
+                    selected = rng.choice(splits.x_train.shape[0], size=n_samples, replace=False)
+                    splits.x_train = splits.x_train[selected]
+                    splits.y_train = splits.y_train[selected]
+                    splits.cancer_train = splits.cancer_train[selected]
+        # --- End sample allocation logic ---
+
         return self._to_local_data(splits)
 
     @staticmethod
