@@ -36,6 +36,12 @@ def main() -> None:
 
 	# Create a shared log queue for GUI
 	log_queue = queue.Queue()
+	# Clear any existing messages in the queue (should be empty, but for safety)
+	try:
+		while True:
+			log_queue.get_nowait()
+	except Exception:
+		pass
 
 	# Configure logging: do NOT save logs to file, only to GUI and console
 	logging.basicConfig(

@@ -303,11 +303,11 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 	agent_vars["types_listbox"] = agent_types_listbox
 
 	# Patterns Available (multi-select listbox)
-	patterns_available = agents_cfg.get("patterns", {}).get("available", ["rule_based", "bayesian", "deep_learning", "hybrid"])
+	patterns_available = agents_cfg.get("patterns", {}).get("available", ["rule_based", "bayesian", "deep_learning"])
 	patterns_available_var = tk.Variable(value=patterns_available)
 	ttk.Label(agent_section, text="Patterns Available", anchor="w").pack(fill="x", padx=2, pady=(8,2))
 	patterns_available_listbox = tk.Listbox(agent_section, listvariable=patterns_available_var, selectmode="multiple", height=4, exportselection=False)
-	for i, t in enumerate(["rule_based", "bayesian", "deep_learning", "hybrid"]):
+	for i, t in enumerate(["rule_based", "bayesian", "deep_learning"]):
 		if t in patterns_available:
 			patterns_available_listbox.selection_set(i)
 	patterns_available_listbox.pack(fill="x", padx=8, pady=(0,8))
@@ -319,7 +319,7 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 			k,
 			tk.StringVar(value=patterns.get(k, "")),
 			"combo",
-			["rule_based", "bayesian", "deep_learning", "hybrid"],
+			["rule_based", "bayesian", "deep_learning"],
 		)
 
 	# ========================
@@ -582,7 +582,7 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		agents['types'] = types_selected
 		patterns = CommentedMap()
 		# Save patterns available from listbox
-		all_patterns = ["rule_based", "bayesian", "deep_learning", "hybrid"]
+		all_patterns = ["rule_based", "bayesian", "deep_learning"]
 		patterns_selected = [all_patterns[i] for i in agent_vars["patterns_available_listbox"].curselection()]
 		patterns['available'] = patterns_selected
 		patterns['default_mapping'] = CommentedMap({k: agent_vars[k].get() for k in ["BCC", "SCC", "MELANOMA", "AKIEC"]})
@@ -687,9 +687,9 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		agent_vars["switch"].set(agents.get("allow_dynamic_switch", True))
 		patterns_dict = agents.get("patterns", {})
 		# Load patterns available into listbox
-		available_loaded = patterns_dict.get("available", ["rule_based", "bayesian", "deep_learning", "hybrid"])
+		available_loaded = patterns_dict.get("available", ["rule_based", "bayesian", "deep_learning"])
 		agent_vars["patterns_available_listbox"].selection_clear(0, "end")
-		for i, t in enumerate(["rule_based", "bayesian", "deep_learning", "hybrid"]):
+		for i, t in enumerate(["rule_based", "bayesian", "deep_learning"]):
 			if t in available_loaded:
 				agent_vars["patterns_available_listbox"].selection_set(i)
 		patterns = patterns_dict.get("default_mapping", {})

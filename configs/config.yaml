@@ -1,6 +1,8 @@
 # # ========================
 # # DATA SOURCES
 # # ========================
+enabled_datasets:
+  - HAM10000
 ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
 isic_csv: 'src/client_side/datasets/ISIC2019/ISIC2019_metadata.csv'
 out_dir: outputs

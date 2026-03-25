@@ -24,6 +24,7 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 	import logging
 
 	def run_training():
+		import traceback
 		status_var.set("Loading config...")
 		logging.info("Loading config...")
 		try:
@@ -38,7 +39,7 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 			logging.info("Training completed!")
 		except Exception as e:
 			status_var.set(f"Error: {e}")
-			logging.error(f"Error: {e}")
+			logging.error(f"Error: {e}\nTraceback:\n{traceback.format_exc()}")
 
 	def on_train_click():
 		threading.Thread(target=run_training, daemon=True).start()

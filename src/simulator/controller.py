@@ -14,7 +14,8 @@ def load_config(config_path="configs/config.yaml"):
         with open(config_path, "r") as f:
             return yaml.safe_load(f)
     except Exception as e:
-        logging.error(f"Failed to load config: {e}")
+        import traceback
+        logging.error(f"Failed to load config: {e}\nTraceback:\n{traceback.format_exc()}")
         sys.exit(1)
 
 
@@ -22,17 +23,21 @@ def make_hospitals(config, data_pipeline):
     """Instantiate hospitals and their agent portfolios."""
     hospital_ids = [h.strip() for h in config["hospital_ids"].split(",")]
     agent_patterns = config["agents"]["patterns"]["default_mapping"]
+    enabled_datasets = config.get("enabled_datasets", [])
     hospitals = {}
     for hid in hospital_ids:
         patterns = {ct: create_thinking_pattern(agent_patterns[ct]) for ct in agent_patterns}
         portfolio = AgentPortfolio(initial_patterns=patterns)
-        hospitals[hid] = HospitalNode(
+        hospital_kwargs = dict(
             hospital_id=hid,
-            ham_metadata_csv=config["ham_csv"],
-            isic_labels_csv=config["isic_csv"],
             data_pipeline=data_pipeline,
             agent_portfolio=portfolio,
         )
+        if "HAM10000" in enabled_datasets:
+            hospital_kwargs["ham_metadata_csv"] = config["ham_csv"]
+        if "ISIC2019" in enabled_datasets:
+            hospital_kwargs["isic_labels_csv"] = config["isic_csv"]
+        hospitals[hid] = HospitalNode(**hospital_kwargs)
     return hospitals
 
 def initialize_system(config):
@@ -69,12 +74,13 @@ def train_system(config, hospitals):
 def test_system(hospitals):
     """Evaluate all hospitals' agents on their test data."""
     results = {}
+    import traceback
     for hid, hospital in hospitals.items():
         try:
             results[hid] = hospital.evaluate()
             logging.info(f"Tested hospital {hid}")
         except Exception as e:
-            logging.error(f"Testing failed for hospital {hid}: {e}")
+            logging.error(f"Testing failed for hospital {hid}: {e}\nTraceback:\n{traceback.format_exc()}")
             results[hid] = None
     return results
 
