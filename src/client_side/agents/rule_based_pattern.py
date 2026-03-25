@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base_pattern import ThinkingPattern
+from .base import ThinkingPattern
 
 
 class RuleBasedThinkingPattern(ThinkingPattern):

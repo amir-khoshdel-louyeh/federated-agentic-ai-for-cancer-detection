@@ -49,10 +49,9 @@ agents:
       - rule_based
       - bayesian
       - deep_learning
-      - hybrid
     default_mapping:
-      BCC: hybrid
-      SCC: hybrid
+      BCC: rule_based
+      SCC: rule_based
       MELANOMA: deep_learning
       AKIEC: bayesian
     allow_dynamic_switch: true

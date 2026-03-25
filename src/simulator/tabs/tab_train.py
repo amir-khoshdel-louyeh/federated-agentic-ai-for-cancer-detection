@@ -21,17 +21,24 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 
 	status_var = tk.StringVar(value="Idle.")
 
+	import logging
+
 	def run_training():
 		status_var.set("Loading config...")
+		logging.info("Loading config...")
 		try:
 			config = load_config()
 			status_var.set("Initializing system...")
+			logging.info("Initializing system...")
 			hospitals = initialize_system(config)
 			status_var.set("Training in progress...")
+			logging.info("Training in progress...")
 			train_system(config, hospitals)
 			status_var.set("Training completed!")
+			logging.info("Training completed!")
 		except Exception as e:
 			status_var.set(f"Error: {e}")
+			logging.error(f"Error: {e}")
 
 	def on_train_click():
 		threading.Thread(target=run_training, daemon=True).start()

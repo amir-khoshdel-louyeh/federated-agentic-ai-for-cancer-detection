@@ -1,8 +1,8 @@
 # # ========================
 # # DATA SOURCES
 # # ========================
-ham_csv: ''
-isic_csv: ''
+ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
+isic_csv: 'src/client_side/datasets/ISIC2019/ISIC2019_metadata.csv'
 out_dir: outputs
 
 # # ========================
@@ -41,10 +41,9 @@ agents:
       - rule_based
       - bayesian
       - deep_learning
-      - hybrid
     default_mapping:
-      BCC: hybrid
-      SCC: hybrid
+      BCC: rule_based
+      SCC: rule_based
       MELANOMA: deep_learning
       AKIEC: bayesian
     allow_dynamic_switch: true

@@ -1,13 +1,17 @@
 """Logs tab module."""
 
 
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-
+import queue
+import logging
 from ..ui_kit import add_header, build_scrollable_page
+from ..tkinter_queue_handler import TkinterQueueHandler
 
 
-def build_logs_tab(parent: ttk.Notebook) -> ttk.Frame:
+
+def build_logs_tab(parent: ttk.Notebook, log_queue: queue.Queue = None) -> ttk.Frame:
 	"""Create and return the Logs tab frame."""
 	frame, content = build_scrollable_page(parent)
 
@@ -68,6 +72,29 @@ def build_logs_tab(parent: ttk.Notebook) -> ttk.Frame:
 	yscroll = ttk.Scrollbar(log_frame, orient="vertical", command=log_text.yview)
 	yscroll.pack(side="right", fill="y")
 	log_text.config(yscrollcommand=yscroll.set)
+
+	# Setup queue and handler for real-time logs
+	if log_queue is None:
+		log_queue = queue.Queue()
+	queue_handler = TkinterQueueHandler(log_queue)
+	queue_handler.setLevel(logging.INFO)
+	formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+	queue_handler.setFormatter(formatter)
+	logging.getLogger().addHandler(queue_handler)
+
+	def poll_log_queue():
+		while True:
+			try:
+				msg = log_queue.get_nowait()
+			except queue.Empty:
+				break
+			log_text.config(state="normal")
+			log_text.insert(tk.END, msg + "\n")
+			log_text.see(tk.END)
+			log_text.config(state="disabled")
+		log_text.after(200, poll_log_queue)
+
+	poll_log_queue()
 
 	# Load log directory and file name from configs/config.yaml
 	import os

@@ -1,5 +1,5 @@
 from .akiec_agent import AKIECAgent
-from .base_pattern import SkinCancerAgent, ThinkingPattern
+from .base import SkinCancerAgent, ThinkingPattern
 from .bayesian_pattern import BayesianThinkingPattern
 from .bcc_agent import BCCAgent
 from .deep_learning_pattern import DeepLearningThinkingPattern

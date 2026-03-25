@@ -6,7 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from .base_pattern import ThinkingPattern
+from .base import ThinkingPattern
 
 
 class _MLP(nn.Module):

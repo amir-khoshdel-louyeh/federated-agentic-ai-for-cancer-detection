@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from sklearn.naive_bayes import GaussianNB
 
-from .base_pattern import ThinkingPattern
+from .base import ThinkingPattern
 
 
 class BayesianThinkingPattern(ThinkingPattern):

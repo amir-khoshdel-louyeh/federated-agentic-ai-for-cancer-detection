@@ -16,9 +16,11 @@ from .ui_kit import configure_app_style
 
 
 
+
 import os
 import logging
 import yaml
+import queue
 
 def main() -> None:
 	# Load config for logging control
@@ -32,23 +34,15 @@ def main() -> None:
 	log_dir = tracking.get("log_dir", "outputs/logs")
 	log_file = os.path.join(log_dir, "simulation.log")
 
-	# Configure logging
-	if save_logs:
-		os.makedirs(log_dir, exist_ok=True)
-		logging.basicConfig(
-			level=logging.INFO,
-			format="%(asctime)s | %(levelname)s | %(message)s",
-			handlers=[
-				logging.FileHandler(log_file, encoding="utf-8"),
-				logging.StreamHandler()
-			]
-		)
-	else:
-		logging.basicConfig(
-			level=logging.INFO,
-			format="%(asctime)s | %(levelname)s | %(message)s",
-			handlers=[logging.StreamHandler()]
-		)
+	# Create a shared log queue for GUI
+	log_queue = queue.Queue()
+
+	# Configure logging: do NOT save logs to file, only to GUI and console
+	logging.basicConfig(
+		level=logging.INFO,
+		format="%(asctime)s | %(levelname)s | %(message)s",
+		handlers=[logging.StreamHandler()]
+	)
 
 	root = tk.Tk()
 	root.title("Federated Agentic AI")
@@ -72,7 +66,7 @@ def main() -> None:
 	tab_train = build_train_tab(notebook)
 	tab_test = build_test_tab(notebook)
 	tab_results = build_results_tab(notebook)
-	tab_logs = build_logs_tab(notebook)
+	tab_logs = build_logs_tab(notebook, log_queue=log_queue)
 
 	notebook.add(tab_information, text="Information")
 	notebook.add(tab_configuration, text="Configuration")

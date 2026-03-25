@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base_pattern import SkinCancerAgent, ThinkingPattern
+from .base import SkinCancerAgent, ThinkingPattern
 
 
 class MelanomaAgent(SkinCancerAgent):
