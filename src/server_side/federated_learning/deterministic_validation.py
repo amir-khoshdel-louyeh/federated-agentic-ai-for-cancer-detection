@@ -8,8 +8,8 @@ from src.client_side.hospital.orchestrator import FederatedRoundOrchestrator
 from .validators import validate_local_updates
 
 
-def _build_local_update(hospital_id: str, seed_shift: int) -> dict[str, Any]:
-    base = 0.62 + 0.03 * seed_shift
+def _build_local_update(hospital_id: str, random_seed_shift: int) -> dict[str, Any]:
+    base = 0.62 + 0.03 * random_seed_shift
     metrics = {
         "bcc::rule_based": {
             "accuracy": base,
@@ -50,12 +50,12 @@ def _build_local_update(hospital_id: str, seed_shift: int) -> dict[str, Any]:
         },
         "metadata": {
             "split_sizes": {
-                "train": 400 + (seed_shift * 50),
-                "val": 100 + (seed_shift * 10),
-                "test": 120 + (seed_shift * 10),
+                "train": 400 + (random_seed_shift * 50),
+                "val": 100 + (random_seed_shift * 10),
+                "test": 120 + (random_seed_shift * 10),
             },
-            "training_warnings": {} if seed_shift != 1 else {"SCC": "class imbalance fallback"},
-            "extra": {"random_seed": 42 + seed_shift},
+            "training_warnings": {} if random_seed_shift != 1 else {"SCC": "class imbalance fallback"},
+            "extra": {"random_seed": 42 + random_seed_shift},
         },
         "selected_patterns": {
             "BCC": "rule_based",

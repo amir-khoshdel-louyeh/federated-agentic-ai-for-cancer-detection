@@ -28,7 +28,7 @@ def simulate_multi_hospital(
 
     outputs: dict[str, dict[str, Any]] = {}
     for index, hospital_id in enumerate(ids):
-        # Distinct seeds and pattern mappings emulate heterogeneous local centers.
+        # Distinct random_seeds and pattern mappings emulate heterogeneous local centers.
         dataset_handler = VirtualHospital(random_state=42 + index)
         policy = StaticPatternPolicy(
             hospital_id=hospital_id,

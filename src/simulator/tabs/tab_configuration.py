@@ -195,7 +195,7 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		default_hosp = "HOSPITAL1"
 	hospital_vars["hospital_ids"] = _add_field(hospital_card, "Hospital IDs", tk.StringVar(value=default_hosp))
 	hospital_vars["num_agents"] = _add_field(hospital_card, "Agents", tk.IntVar(value=config.get("num_agents_per_hospital", 4)))
-	hospital_vars["seed"] = _add_field(hospital_card, "Seed", tk.IntVar(value=config.get("seed", 42)))
+	hospital_vars["random_seed"] = _add_field(hospital_card, "random_seed", tk.IntVar(value=config.get("random_seed", 42)))
 
 	# Hospital counter and Add/Remove buttons (vertical layout)
 	counter_frame = ttk.Frame(hospital_card)
@@ -554,7 +554,7 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		d.yaml_set_comment_before_after_key('hospital_ids', before="\n# ========================\n# SYSTEM SETUP\n# ========================")
 		d['hospital_ids'] = hospital_vars['hospital_ids'].get()
 		d['num_agents_per_hospital'] = hospital_vars['num_agents'].get()
-		d['seed'] = hospital_vars['seed'].get()
+		d['random_seed'] = hospital_vars['random_seed'].get()
 
 		# FEDERATED LEARNING
 		d.yaml_set_comment_before_after_key('federation', before="\n# ========================\n# FEDERATED LEARNING\n# ========================")
@@ -671,7 +671,7 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 		# Set hospital
 		hospital_vars["hospital_ids"].set(loaded.get("hospital_ids", ""))
 		hospital_vars["num_agents"].set(loaded.get("num_agents_per_hospital", 4))
-		hospital_vars["seed"].set(loaded.get("seed", 42))
+		hospital_vars["random_seed"].set(loaded.get("random_seed", 42))
 		# Set patient
 		patient_vars["ham_csv"].set(loaded.get("ham_csv", ""))
 		patient_vars["isic_csv"].set(loaded.get("isic_csv", ""))

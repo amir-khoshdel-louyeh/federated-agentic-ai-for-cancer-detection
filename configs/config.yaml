@@ -8,17 +8,27 @@ isic_csv: 'src/client_side/datasets/ISIC2019/ISIC2019_metadata.csv'
 out_dir: outputs
 
 # # ========================
+# # DATA SPLIT & SAMPLING
+# # ========================
+data_split:
+  train: 0.8
+  validation: 0.1
+  test: 0.1
+sampling:
+  total_samples: 10000  # Set to desired number, or null for all available
+  random_seed: 42
+
+# # ========================
 # # SYSTEM SETUP
 # # ========================
 hospital_ids: HOSPITAL1
 num_agents_per_hospital: 4
-seed: 42
 
 # # ========================
 # # FEDERATED LEARNING
 # # ========================
 federation:
-  aggregation_algorithm: fedavg
+  aggregation_algorithm: no_operation
   fedprox:
     mu: 0.1
   adaptive:

@@ -75,7 +75,7 @@ def build_info_tab(parent: ttk.Notebook) -> ttk.Frame:
 		title="Tab Guide",
 		lines=[
 			"Information: welcome page and project documentation.",
-			"Configuration: paths, hospitals, patterns, seed, and aggregation controls.",
+			"Configuration: paths, hospitals, patterns, random_seed, and aggregation controls.",
 			"Train: dataset readiness, split health, and training lifecycle overview.",
 			"Test: per-agent performance and metric interpretation.",
 			"Results: hospital-to-hospital and global federation outcomes.",
