@@ -6,7 +6,7 @@ from typing import Any, Literal, Mapping
 import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_auc_score
 
-from src.agents import SkinCancerAgent
+from ..agents import SkinCancerAgent
 
 from .contracts import (
     AdaptivePatternPolicyContract,

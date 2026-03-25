@@ -1,85 +1,45 @@
 """Train tab module."""
 
+import threading
 from tkinter import ttk
+import tkinter as tk
 
 from ..ui_kit import add_card, add_header, build_scrollable_page
 
+# Import controller functions
+from ..controller import load_config, initialize_system, train_system
 
 def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 	"""Create and return the Train tab frame."""
-	import os
-	import yaml
 	frame, content = build_scrollable_page(parent)
-
-	# Load config
-	config_path = os.path.join("configs", "config.yaml")
-	if not os.path.exists(config_path):
-		config = {}
-	else:
-		with open(config_path, "r") as f:
-			config = yaml.safe_load(f)
-
-	# Header
 	add_header(
 		content,
-		title="Training Control",
-		subtitle="Configure and launch federated training. Review the current setup below.",
-		badge="Train"
+		title="Federated Training",
+		subtitle="Start federated training for all hospital agents using the current configuration.",
+		badge="TRAIN"
 	)
 
-	# Dataset info
-	dataset_name = "HAM10000" if config.get("ham_csv") else ("ISIC2019" if config.get("isic_csv") else "N/A")
-	out_dir = config.get("out_dir", "outputs")
-	add_card(
-		content,
-		title="Dataset",
-		lines=[
-			f"Name: {dataset_name}",
-			f"Output Dir: {out_dir}"
-		]
-	)
+	status_var = tk.StringVar(value="Idle.")
 
-	# Algorithm info
-	fed = config.get("federation", {})
-	algo = fed.get("aggregation_algorithm", "N/A")
-	methods = ["fedavg"]
-	if "fedprox" in fed:
-		methods.append("fedprox")
-	if "adaptive" in fed:
-		methods.append("adaptive")
-	methods_str = ", ".join(methods)
-	add_card(
-		content,
-		title="Federated Algorithm",
-		lines=[
-			f"Selected: {algo}",
-			f"Available: {methods_str}"
-		]
-	)
+	def run_training():
+		status_var.set("Loading config...")
+		try:
+			config = load_config()
+			status_var.set("Initializing system...")
+			hospitals = initialize_system(config)
+			status_var.set("Training in progress...")
+			train_system(config, hospitals)
+			status_var.set("Training completed!")
+		except Exception as e:
+			status_var.set(f"Error: {e}")
 
-	# Agents info
-	agents = config.get("agents", {})
-	agent_types = agents.get("types", [])
-	patterns = agents.get("patterns", {}).get("available", [])
-	default_mapping = agents.get("patterns", {}).get("default_mapping", {})
-	add_card(
-		content,
-		title="Agents",
-		lines=[
-			f"Types: {', '.join(agent_types)}",
-			f"Patterns: {', '.join(patterns)}",
-			f"Default Mapping: {default_mapping}"
-		]
-	)
+	def on_train_click():
+		threading.Thread(target=run_training, daemon=True).start()
 
-	# Control buttons
-	controls = ttk.Frame(content)
-	controls.pack(fill="x", padx=20, pady=(16, 10))
+	train_btn = ttk.Button(content, text="Start Training", command=on_train_click)
+	train_btn.pack(pady=16)
 
-	start_btn = ttk.Button(controls, text="Start Training", style="Colored.TButton")
-	start_btn.pack(side="left", padx=8)
-	stop_btn = ttk.Button(controls, text="Stop Training", style="Danger.TButton")
-	stop_btn.pack(side="left", padx=8)
-	# Optionally: add more controls (pause, resume, etc.)
+	status_label = ttk.Label(content, textvariable=status_var, style="Subheading.TLabel")
+	status_label.pack(anchor="w", padx=20, pady=(8, 0))
 
 	return frame

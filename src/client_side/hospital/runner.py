@@ -11,7 +11,7 @@ from typing import Any, Mapping
 import numpy as np
 import yaml
 
-from src.federated_learning import FederatedRoundOrchestrator, supported_aggregator_names
+from src.server_side.federated_learning import FederatedRoundOrchestrator, supported_aggregator_names
 
 from .artifacts import save_hospital_artifacts
 from .hospital_env import VirtualHospital

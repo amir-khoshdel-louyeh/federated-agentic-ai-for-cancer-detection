@@ -5,7 +5,7 @@ from typing import Mapping
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
-from src.agents import (
+from ..agents import (
     AKIECAgent,
     BCCAgent,
     MelanomaAgent,
