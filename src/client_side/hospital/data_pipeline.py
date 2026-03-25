@@ -73,10 +73,15 @@ class LocalDataPipeline:
 
     def load(
         self,
-        ham_metadata_csv: str | Path,
-        isic_labels_csv: str | Path,
+        ham_metadata_csv: str | Path = None,
+        isic_labels_csv: str | Path = None,
     ) -> LocalHospitalData:
-        splits = self.dataset_handler.load(ham_metadata_csv=ham_metadata_csv, isic_labels_csv=isic_labels_csv)
+        kwargs = {}
+        if ham_metadata_csv is not None:
+            kwargs["ham_metadata_csv"] = ham_metadata_csv
+        if isic_labels_csv is not None:
+            kwargs["isic_labels_csv"] = isic_labels_csv
+        splits = self.dataset_handler.load(**kwargs)
         return self._to_local_data(splits)
 
     @staticmethod

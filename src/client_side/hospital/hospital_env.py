@@ -41,14 +41,19 @@ class VirtualHospital:
 
     def load(
         self,
-        ham_metadata_csv: str | Path,
-        isic_labels_csv: str | Path,
+        ham_metadata_csv: str | Path = None,
+        isic_labels_csv: str | Path = None,
         test_size: float = 0.2,
         val_size: float = 0.2,
     ) -> HospitalSplits:
-        ham_df = self._load_ham10000(ham_metadata_csv)
-        isic_df = self._load_isic2019(isic_labels_csv)
-        data = pd.concat([ham_df, isic_df], axis=0, ignore_index=True)
+        dfs = []
+        if ham_metadata_csv is not None:
+            dfs.append(self._load_ham10000(ham_metadata_csv))
+        if isic_labels_csv is not None:
+            dfs.append(self._load_isic2019(isic_labels_csv))
+        if not dfs:
+            raise ValueError("No dataset enabled: at least one of ham_metadata_csv or isic_labels_csv must be provided.")
+        data = pd.concat(dfs, axis=0, ignore_index=True)
 
         x = data.drop(columns=["target", "image_id", "cancer_type"]).to_numpy(dtype=np.float32)
         y = data["target"].to_numpy(dtype=np.int64)

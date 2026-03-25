@@ -31,16 +31,16 @@ class HospitalNode(HospitalLifecycleContract):
     def __init__(
         self,
         hospital_id: str,
-        ham_metadata_csv: str | Path,
-        isic_labels_csv: str | Path,
+        ham_metadata_csv: str | Path = None,
+        isic_labels_csv: str | Path = None,
         dataset_handler: VirtualHospital | None = None,
         data_pipeline: LocalDataPipeline | None = None,
         agent_portfolio: AgentPortfolioContract | None = None,
         pattern_policy: PatternPolicyContract | None = None,
     ) -> None:
         self.hospital_id = hospital_id
-        self.ham_metadata_csv = Path(ham_metadata_csv)
-        self.isic_labels_csv = Path(isic_labels_csv)
+        self.ham_metadata_csv = Path(ham_metadata_csv) if ham_metadata_csv is not None else None
+        self.isic_labels_csv = Path(isic_labels_csv) if isic_labels_csv is not None else None
         self.dataset_handler = dataset_handler or VirtualHospital(random_state=42)
         self.data_pipeline = data_pipeline or LocalDataPipeline(dataset_handler=self.dataset_handler)
         self.local_data: LocalHospitalData | None = None
