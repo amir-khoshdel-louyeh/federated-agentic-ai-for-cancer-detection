@@ -17,6 +17,7 @@ def load_config(config_path="configs/config.yaml"):
         logging.error(f"Failed to load config: {e}")
         sys.exit(1)
 
+
 def make_hospitals(config, data_pipeline):
     """Instantiate hospitals and their agent portfolios."""
     hospital_ids = [h.strip() for h in config["hospital_ids"].split(",")]
@@ -33,6 +34,66 @@ def make_hospitals(config, data_pipeline):
             agent_portfolio=portfolio,
         )
     return hospitals
+
+def initialize_system(config):
+    """Initialize config, output dirs, logging, data pipeline, and hospitals."""
+    ensure_output_dirs(config)
+    logging.basicConfig(
+        filename=Path(config.get("tracking", {}).get("log_dir", "outputs/logs")) / config.get("tracking", {}).get("log_file_name", "simulation.log"),
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
+    data_pipeline = LocalDataPipeline()
+    hospitals = make_hospitals(config, data_pipeline)
+    allocate_data(hospitals)
+    logging.info("System initialized.")
+    return hospitals
+
+def train_system(config, hospitals):
+    """Run federated training rounds."""
+    aggregation_name = config["federation"]["aggregation_algorithm"]
+    orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
+    num_rounds = config["simulation"]["num_rounds"]
+    for round_idx in range(1, num_rounds + 1):
+        for hospital in hospitals.values():
+            hospital.train()
+        local_updates = {hid: h.get_local_update() for hid, h in hospitals.items()}
+        round_output = orchestrator.run_round(
+            round_index=round_idx,
+            local_updates=local_updates,
+        )
+        orchestrator.broadcast_global_state(hospitals, round_output.global_state)
+        logging.info(f"Completed round {round_idx}")
+    return orchestrator
+
+def test_system(hospitals):
+    """Evaluate all hospitals' agents on their test data."""
+    results = {}
+    for hid, hospital in hospitals.items():
+        try:
+            results[hid] = hospital.evaluate()
+            logging.info(f"Tested hospital {hid}")
+        except Exception as e:
+            logging.error(f"Testing failed for hospital {hid}: {e}")
+            results[hid] = None
+    return results
+
+def show_results(results):
+    """Display or save evaluation results."""
+    print("\n===== Evaluation Results =====")
+    for hid, res in results.items():
+        print(f"Hospital: {hid}")
+        if res is None:
+            print("  Evaluation failed.")
+        else:
+            for k, v in res.items():
+                print(f"  {k}: {v}")
+    print("============================\n")
+
+def show_log_location(config):
+    log_dir = Path(config.get("tracking", {}).get("log_dir", "outputs/logs"))
+    log_file = config.get("tracking", {}).get("log_file_name", "simulation.log")
+    print(f"Logs saved at: {log_dir / log_file}")
 
 def allocate_data(hospitals):
     """Load data and initialize each hospital."""
@@ -62,19 +123,13 @@ def ensure_output_dirs(config):
     out_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-def main():
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/config.yaml"
-    config = load_config(config_path)
-    ensure_output_dirs(config)
-    logging.basicConfig(
-        filename=Path(config.get("tracking", {}).get("log_dir", "outputs/logs")) / config.get("tracking", {}).get("log_file_name", "simulation.log"),
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s"
-    )
-    data_pipeline = LocalDataPipeline()
-    hospitals = make_hospitals(config, data_pipeline)
-    allocate_data(hospitals)
-    run_federated_learning(config, hospitals)
 
-if __name__ == "__main__":
-    main()
+
+# For GUI integration: call these functions in the desired order.
+# Example usage in GUI:
+#   config = load_config()
+#   hospitals = initialize_system(config)
+#   orchestrator = train_system(config, hospitals)
+#   results = test_system(hospitals)
+#   show_results(results)
+#   show_log_location(config)
