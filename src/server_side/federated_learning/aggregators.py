@@ -22,6 +22,43 @@ METRIC_KEYS: tuple[str, ...] = (
 CANCER_TYPES: tuple[str, ...] = ("BCC", "SCC", "MELANOMA", "AKIEC")
 
 
+
+
+@dataclass(frozen=True)
+class NoOperationAggregator:
+    """No-op aggregator for single-hospital mode: returns local update as global state."""
+
+    @property
+    def name(self) -> str:
+        return "no_operation"
+
+    def aggregate(
+        self,
+        *,
+        round_index: int,
+        local_updates: Mapping[str, LocalHospitalUpdatePayload],
+        previous_global_state: Mapping[str, Any] | None = None,
+    ) -> AggregationOutput:
+        if len(local_updates) != 1:
+            raise ValueError("NoOperationAggregator can only be used with a single hospital.")
+        hospital_id, payload = next(iter(local_updates.items()))
+        # Use the local hospital's metrics as the global metrics
+        metrics = payload.get("metrics", {}).get("selected_performance", {})
+        # Fallback to per_agent mean if selected_performance is missing
+        if not metrics:
+            from .aggregators import _compute_hospital_metric_mean
+            metrics = _compute_hospital_metric_mean(payload)
+        return AggregationOutput(
+            algorithm=self.name,
+            round_index=round_index,
+            global_metrics=metrics,
+            hospital_weights={hospital_id: 1.0},
+            included_hospital_ids=(hospital_id,),
+            details={"note": "No aggregation performed; single-hospital mode."},
+        )
+
+
+
 @dataclass(frozen=True)
 class FedAvgAggregator:
     """Federated averaging over hospital metric summaries."""

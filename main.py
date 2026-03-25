@@ -26,7 +26,7 @@ seed: 42
 # # FEDERATED LEARNING
 # # ========================
 federation:
-  aggregation_algorithm: fedavg
+  aggregation_algorithm: no_operation
   fedprox:
     mu: 0.1
   adaptive:

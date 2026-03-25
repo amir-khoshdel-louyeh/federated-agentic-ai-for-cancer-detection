@@ -57,6 +57,14 @@ def initialize_system(config):
 def train_system(config, hospitals):
     """Run federated training rounds."""
     aggregation_name = config["federation"]["aggregation_algorithm"]
+    num_hospitals = len(hospitals)
+    # Enforce no_operation for single-hospital, forbid for multi-hospital
+    if num_hospitals == 1:
+        if aggregation_name != "no_operation":
+            logging.warning("Single-hospital mode detected. Overriding aggregation algorithm to 'no_operation'.")
+        aggregation_name = "no_operation"
+    elif aggregation_name == "no_operation":
+        raise ValueError("'no_operation' aggregation can only be used with a single hospital.")
     orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
     num_rounds = config["simulation"]["num_rounds"]
     for round_idx in range(1, num_rounds + 1):
