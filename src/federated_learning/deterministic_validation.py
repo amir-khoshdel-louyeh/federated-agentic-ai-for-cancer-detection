@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .orchestrator import FederatedRoundOrchestrator
+from src.agents.orchestrator import FederatedRoundOrchestrator
 from .validators import validate_local_updates
 
 
