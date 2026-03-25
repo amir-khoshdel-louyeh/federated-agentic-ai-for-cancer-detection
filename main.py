@@ -22,9 +22,12 @@ data_split:
   train: 0.8
   validation: 0.1
   test: 0.1
+
 sampling:
-  total_samples: 10000  # Set to desired number, or null for all available
+  total_samples: 1000  # Set to desired number, or null for all available
   random_seed: 42
+  # How to assign samples to hospitals: 'even' (divide equally), 'random' (random assignment)
+  hospital_sample_assignment: even
 
 # # ========================
 # # SYSTEM SETUP

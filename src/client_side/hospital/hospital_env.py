@@ -33,11 +33,19 @@ HAM_TO_CANCER_TYPE = {
 }
 
 
+
 class VirtualHospital:
     """Loads and prepares local hospital data from HAM10000 and ISIC 2019 metadata."""
 
-    def __init__(self, random_state: int = 42) -> None:
-        self.random_state = random_state
+    def __init__(self, random_state: int = None, config: dict = None) -> None:
+        # Prefer config['sampling']['random_seed'] if available
+        self.config = config
+        if random_state is not None:
+            self.random_state = random_state
+        elif config is not None:
+            self.random_state = config.get("sampling", {}).get("random_seed", 42)
+        else:
+            self.random_state = 42
 
     def load(
         self,

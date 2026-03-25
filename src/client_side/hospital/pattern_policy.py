@@ -1,28 +1,40 @@
 from __future__ import annotations
 
+
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Mapping, Optional
 
 from .pattern_factory import ThinkingPatternFactory
 
 CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
 ValidationScoreByPattern = Mapping[str, Mapping[str, float]]
 
+def _extract_default_mapping_from_config(config: Optional[dict]) -> dict:
+    # Try to extract from config['agents']['patterns']['default_mapping']
+    if config is not None:
+        try:
+            return dict(config["agents"]["patterns"]["default_mapping"])
+        except Exception:
+            pass
+    # Fallback to legacy hardcoded mapping if not found
+    return {
+        "BCC": "rule_based",
+        "SCC": "bayesian",
+        "MELANOMA": "deep_learning",
+        "AKIEC": "rule_based_strict",
+    }
 
 @dataclass
 class StaticPatternPolicy:
     """Deterministic, configurable pattern policy used for initial hospital rollout."""
 
     hospital_id: str
-    default_mapping: Mapping[str, str] = field(
-        default_factory=lambda: {
-            "BCC": "rule_based",
-            "SCC": "bayesian",
-            "MELANOMA": "deep_learning",
-            "AKIEC": "rule_based_strict",
-        }
-    )
+    config: Optional[dict] = None
+    default_mapping: Mapping[str, str] = field(init=False)
     hospital_overrides: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.default_mapping = _extract_default_mapping_from_config(self.config)
 
     def select_patterns(self) -> dict[str, str]:
         resolved = {key.upper(): value.strip().lower() for key, value in self.default_mapping.items()}

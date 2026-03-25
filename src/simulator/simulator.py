@@ -17,18 +17,15 @@ from .ui_kit import configure_app_style
 
 
 
+
 import os
 import logging
-import yaml
 import queue
+from configs.config_loader import load_config
 
 def main() -> None:
 	# Load config for logging control
-	config_path = "config.yaml"
-	config = {}
-	if os.path.exists(config_path):
-		with open(config_path, "r") as f:
-			config = yaml.safe_load(f) or {}
+	config = load_config()
 	tracking = config.get("tracking", {})
 	save_logs = tracking.get("save_logs", True)
 	log_dir = tracking.get("log_dir", "outputs/logs")

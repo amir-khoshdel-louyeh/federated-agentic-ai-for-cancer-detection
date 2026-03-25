@@ -55,16 +55,15 @@ def build_configuration_tab(parent: ttk.Notebook) -> ttk.Frame:
 	)
 
 	# ========================
-	# LOAD CONFIG (always from configs/config.yaml)
+	# LOAD CONFIG using shared config loader
 	# ========================
-	config_path = Path("configs/config.yaml")
-	if not config_path.exists():
+	from configs.config_loader import load_config
+	try:
+		config = load_config()
+	except Exception:
 		import tkinter.messagebox as mb
-		mb.showerror("Missing config.yaml", "The configuration file 'configs/config.yaml' was not found. Please ensure it exists in the configs directory.")
+		mb.showerror("Missing config.yaml", "The configuration file 'configs/config.yaml' was not found or could not be loaded. Please ensure it exists in the configs directory.")
 		return page
-
-	with open(config_path, "r") as f:
-		config = yaml.safe_load(f)
 
 	# ========================
 	# SCROLLABLE LAYOUT

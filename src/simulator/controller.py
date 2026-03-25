@@ -1,22 +1,13 @@
-import yaml
-import logging
-import sys
+from configs.config_loader import load_config
 from pathlib import Path
+import logging
 from src.client_side.hospital.agent_portfolio import AgentPortfolio
 from src.client_side.hospital.hospital_node import HospitalNode
 from src.client_side.hospital.data_pipeline import LocalDataPipeline
 from src.client_side.hospital.orchestrator import FederatedRoundOrchestrator
 from src.client_side.hospital.pattern_factory import create_thinking_pattern
 
-def load_config(config_path="configs/config.yaml"):
-    """Load experiment configuration from YAML file."""
-    try:
-        with open(config_path, "r") as f:
-            return yaml.safe_load(f)
-    except Exception as e:
-        import traceback
-        logging.error(f"Failed to load config: {e}\nTraceback:\n{traceback.format_exc()}")
-        sys.exit(1)
+
 
 
 def make_hospitals(config, data_pipeline):

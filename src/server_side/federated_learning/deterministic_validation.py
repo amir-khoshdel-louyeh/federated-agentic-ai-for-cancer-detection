@@ -4,42 +4,70 @@ import json
 from pathlib import Path
 from typing import Any
 
+
 from src.client_side.hospital.orchestrator import FederatedRoundOrchestrator
 from .validators import validate_local_updates
+# Import config loader from configs package
+from configs.config_loader import load_config
 
+
+
+# Load config once at module level
+_CONFIG = load_config()
 
 def _build_local_update(hospital_id: str, random_seed_shift: int) -> dict[str, Any]:
-    base = 0.62 + 0.03 * random_seed_shift
-    metrics = {
-        "bcc::rule_based": {
-            "accuracy": base,
-            "f1": base - 0.05,
-            "auc": base + 0.07,
-            "sensitivity": base - 0.03,
-            "specificity": base + 0.02,
-        },
-        "scc::bayesian": {
-            "accuracy": base + 0.01,
-            "f1": base - 0.02,
-            "auc": base + 0.05,
-            "sensitivity": base - 0.01,
-            "specificity": base + 0.01,
-        },
-        "melanoma::deep_learning": {
-            "accuracy": base + 0.03,
-            "f1": base + 0.01,
-            "auc": base + 0.09,
-            "sensitivity": base + 0.02,
-            "specificity": base + 0.02,
-        },
-        "akiec::rule_based_strict": {
-            "accuracy": base - 0.01,
-            "f1": base - 0.04,
-            "auc": base + 0.03,
-            "sensitivity": base - 0.02,
-            "specificity": base,
-        },
+    # Use config-driven values
+    agents_cfg = _CONFIG.get("agents", {})
+    patterns_cfg = agents_cfg.get("patterns", {})
+    default_mapping = patterns_cfg.get("default_mapping", {
+        "BCC": "rule_based",
+        "SCC": "bayesian",
+        "MELANOMA": "deep_learning",
+        "AKIEC": "rule_based_strict",
+    })
+    agent_types = agents_cfg.get("types", ["akiec_agent", "bcc_agent", "melanoma_agent", "scc_agent"])
+    num_agents = _CONFIG.get("num_agents_per_hospital", 4)
+    random_seed_base = _CONFIG.get("sampling", {}).get("random_seed", 42)
+    # Compose metrics keys from mapping
+    pattern_keys = {
+        f"{cancer_type.lower()}::{pattern}": cancer_type for cancer_type, pattern in default_mapping.items()
     }
+    base = 0.62 + 0.03 * random_seed_shift
+    metrics = {}
+    for key in pattern_keys:
+        # Just for demonstration, use base values as before
+        if "bcc" in key:
+            metrics[key] = {
+                "accuracy": base,
+                "f1": base - 0.05,
+                "auc": base + 0.07,
+                "sensitivity": base - 0.03,
+                "specificity": base + 0.02,
+            }
+        elif "scc" in key:
+            metrics[key] = {
+                "accuracy": base + 0.01,
+                "f1": base - 0.02,
+                "auc": base + 0.05,
+                "sensitivity": base - 0.01,
+                "specificity": base + 0.01,
+            }
+        elif "melanoma" in key:
+            metrics[key] = {
+                "accuracy": base + 0.03,
+                "f1": base + 0.01,
+                "auc": base + 0.09,
+                "sensitivity": base + 0.02,
+                "specificity": base + 0.02,
+            }
+        elif "akiec" in key:
+            metrics[key] = {
+                "accuracy": base - 0.01,
+                "f1": base - 0.04,
+                "auc": base + 0.03,
+                "sensitivity": base - 0.02,
+                "specificity": base,
+            }
 
     return {
         "schema_version": "1.0.0",
@@ -55,27 +83,22 @@ def _build_local_update(hospital_id: str, random_seed_shift: int) -> dict[str, A
                 "test": 120 + (random_seed_shift * 10),
             },
             "training_warnings": {} if random_seed_shift != 1 else {"SCC": "class imbalance fallback"},
-            "extra": {"random_seed": 42 + random_seed_shift},
+            "extra": {"random_seed": random_seed_base + random_seed_shift},
         },
-        "selected_patterns": {
-            "BCC": "rule_based",
-            "SCC": "bayesian",
-            "MELANOMA": "deep_learning",
-            "AKIEC": "rule_based_strict",
-        },
+        "selected_patterns": dict(default_mapping),
         "metrics": {
             "per_agent": metrics,
             "selected_performance": {},
             "candidate_pattern_comparisons": {},
         },
         "local_summary": {
-            "num_agents": 4,
-            "average_accuracy": sum(v["accuracy"] for v in metrics.values()) / 4.0,
-            "average_f1": sum(v["f1"] for v in metrics.values()) / 4.0,
-            "average_auc": sum(v["auc"] for v in metrics.values()) / 4.0,
+            "num_agents": num_agents,
+            "average_accuracy": sum(v["accuracy"] for v in metrics.values()) / len(metrics) if metrics else 0.0,
+            "average_f1": sum(v["f1"] for v in metrics.values()) / len(metrics) if metrics else 0.0,
+            "average_auc": sum(v["auc"] for v in metrics.values()) / len(metrics) if metrics else 0.0,
             "best_agent_by_auc": {
-                "name": "melanoma::deep_learning",
-                "auc": metrics["melanoma::deep_learning"]["auc"],
+                "name": next(iter(metrics)),
+                "auc": metrics[next(iter(metrics))]["auc"] if metrics else 0.0,
             },
         },
         "model_update_metadata": {

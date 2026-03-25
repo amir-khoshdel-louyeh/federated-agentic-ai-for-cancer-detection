@@ -66,14 +66,16 @@ class LocalHospitalData:
 
 
 
+
 class LocalDataPipeline:
     """Builds standardized local splits and exposes per-cancer filtering hooks."""
 
     def __init__(self, dataset_handler: VirtualHospital | None = None, hospital_id: str = None, config: dict = None, hospital_ids: list = None) -> None:
-        self.dataset_handler = dataset_handler or VirtualHospital(random_state=42)
-        self.hospital_id = hospital_id
         self.config = config
+        self.hospital_id = hospital_id
         self.hospital_ids = hospital_ids
+        # Always pass config to VirtualHospital
+        self.dataset_handler = dataset_handler or VirtualHospital(config=config)
 
     def load(
         self,
@@ -91,10 +93,11 @@ class LocalDataPipeline:
         if self.config is not None and self.hospital_id is not None and self.hospital_ids is not None:
             total_samples = self.config.get("sampling", {}).get("total_samples", None)
             assignment = self.config.get("sampling", {}).get("hospital_sample_assignment", "even")
+            random_seed = self.config.get("sampling", {}).get("random_seed", 42)
             if total_samples is not None:
                 num_hospitals = len(self.hospital_ids)
                 all_indices = np.arange(splits.x_train.shape[0])
-                rng = np.random.default_rng(self.config.get("sampling", {}).get("random_seed", 42))
+                rng = np.random.default_rng(random_seed)
                 if assignment == "even":
                     base = total_samples // num_hospitals
                     remainder = total_samples % num_hospitals

@@ -111,6 +111,13 @@ def build_logs_tab(parent: ttk.Notebook, log_queue: queue.Queue = None) -> ttk.F
 		log_file_name = tracking.get("log_file_name", "simulation.log")
 
 	log_file = os.path.join(log_dir, log_file_name)
+	# Load log directory and file name from shared config loader
+	from configs.config_loader import load_config
+	config = load_config()
+	tracking = config.get("tracking", {})
+	log_dir = tracking.get("log_dir", "outputs/logs")
+	log_file_name = tracking.get("log_file_name", "simulation.log")
+	log_file = os.path.join(log_dir, log_file_name)
 
 	def read_logs():
 		if not os.path.exists(log_file):
