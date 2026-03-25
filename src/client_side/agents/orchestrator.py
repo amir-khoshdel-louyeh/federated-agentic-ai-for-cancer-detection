@@ -4,14 +4,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
 
-from src.federated_learning.contracts import (
+from src.server_side.federated_learning.contracts import (
 	AggregatorContract,
 	FederatedOrchestratorContract,
 	LocalHospitalUpdatePayload,
 	OrchestratorRoundOutput,
 )
-from src.federated_learning.factory import build_aggregator
-from src.federated_learning.validators import ValidationReport, validate_local_updates
+from src.server_side.federated_learning.factory import build_aggregator
+from src.server_side.federated_learning.validators import ValidationReport, validate_local_updates
 
 
 class HospitalFederatedClient(Protocol):

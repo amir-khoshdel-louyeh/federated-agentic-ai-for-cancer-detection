@@ -20,9 +20,9 @@ outputs/
 # Local dataset storage
 /data/raw/
 /data/processed/
-/datasets/*
-!/datasets/.gitkeep
-!/datasets/__init__.py
+/src/client_side/datasets/*
+!/src/client_side/datasets/.gitkeep
+!/src/client_side/datasets/__init__.py
 
 # Local notes
 proposal.txt

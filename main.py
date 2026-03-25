@@ -9,8 +9,8 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.yaml")
 DEFAULT_CONFIG = """# # ========================
 # # DATA SOURCES
 # # ========================
-ham_csv: 'datasets/HAM10000/HAM10000_metadata.csv'
-isic_csv: 'datasets/ISIC2019/ISIC2019_metadata.csv'
+ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
+isic_csv: 'src/client_side/datasets/ISIC2019/ISIC2019_metadata.csv'
 out_dir: outputs
 
 # # ========================
