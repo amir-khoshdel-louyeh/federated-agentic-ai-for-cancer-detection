@@ -7,6 +7,15 @@ from .base import ThinkingPattern
 
 
 class BayesianThinkingPattern(ThinkingPattern):
+    def save_model(self, file_path: str) -> None:
+        import pickle
+        with open(file_path + '.pkl', 'wb') as f:
+            pickle.dump(self.model, f)
+
+    def load_model(self, file_path: str) -> None:
+        import pickle
+        with open(file_path + '.pkl', 'rb') as f:
+            self.model = pickle.load(f)
     """Probabilistic thinking pattern using Gaussian Naive Bayes."""
 
     def __init__(self) -> None:

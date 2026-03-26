@@ -26,6 +26,24 @@ class _MLP(nn.Module):
 
 
 class DeepLearningThinkingPattern(ThinkingPattern):
+    def save_model(self, file_path: str) -> None:
+        import torch
+        import pickle
+        if self.model is None:
+            raise RuntimeError("Model must be trained before saving.")
+        torch.save({'model_state_dict': self.model.state_dict()}, file_path + '.pt')
+        with open(file_path + '_scaler.pkl', 'wb') as f:
+            pickle.dump(self.scaler, f)
+
+    def load_model(self, file_path: str) -> None:
+        import torch
+        import pickle
+        if self.model is None:
+            raise RuntimeError("Model instance must be created before loading.")
+        checkpoint = torch.load(file_path + '.pt', map_location=self.device)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        with open(file_path + '_scaler.pkl', 'rb') as f:
+            self.scaler = pickle.load(f)
     """Tabular deep learning thinking pattern implemented as a small MLP."""
 
     def __init__(self, epochs: int = 20, batch_size: int = 32, lr: float = 1e-3) -> None:

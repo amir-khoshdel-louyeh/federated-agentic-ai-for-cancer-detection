@@ -19,6 +19,23 @@ CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
 
 
 class AgentPortfolio:
+
+    def save_all_models(self, out_dir: str, hospital_id: str) -> None:
+        import os
+        os.makedirs(out_dir, exist_ok=True)
+        for cancer_type in CANCER_TYPES:
+            agent = self._agents[cancer_type]
+            pattern = agent._thinking_pattern
+            file_base = os.path.join(out_dir, f"{hospital_id}_{cancer_type}_{pattern.name}")
+            pattern.save_model(file_base)
+    
+    def load_all_models(self, out_dir: str, hospital_id: str) -> None:
+        import os
+        for cancer_type in CANCER_TYPES:
+            agent = self._agents[cancer_type]
+            pattern = agent._thinking_pattern
+            file_base = os.path.join(out_dir, f"{hospital_id}_{cancer_type}_{pattern.name}")
+            pattern.load_model(file_base)
     """Hospital-local portfolio with exactly four fixed cancer agents."""
 
     def __init__(self, initial_patterns: Mapping[str, ThinkingPattern] | None = None) -> None:

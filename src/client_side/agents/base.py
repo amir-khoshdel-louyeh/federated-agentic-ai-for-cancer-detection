@@ -6,6 +6,13 @@ import numpy as np
 
 
 class ThinkingPattern(ABC):
+	@abstractmethod
+	def save_model(self, file_path: str) -> None:
+		"""Save model parameters to file."""
+
+	@abstractmethod
+	def load_model(self, file_path: str) -> None:
+		"""Load model parameters from file."""
 	"""Interchangeable decision-making algorithm used by a cancer agent."""
 
 	@property

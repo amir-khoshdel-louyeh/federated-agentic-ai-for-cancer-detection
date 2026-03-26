@@ -6,6 +6,16 @@ from .base import ThinkingPattern
 
 
 class RuleBasedThinkingPattern(ThinkingPattern):
+    def save_model(self, file_path: str) -> None:
+        import json
+        with open(file_path + '.json', 'w') as f:
+            json.dump({'threshold': self.threshold}, f)
+
+    def load_model(self, file_path: str) -> None:
+        import json
+        with open(file_path + '.json', 'r') as f:
+            data = json.load(f)
+            self.threshold = data.get('threshold', self.threshold)
     """
     Deterministic baseline inspired by simple ABCD-style lesion heuristics.
 
@@ -48,6 +58,7 @@ class RuleBasedThinkingPattern(ThinkingPattern):
 
 
 class RuleBasedStrictThinkingPattern(RuleBasedThinkingPattern):
+        # Inherits save/load from RuleBasedThinkingPattern
     """Stricter deterministic heuristic with a higher risk threshold."""
 
     def __init__(self) -> None:

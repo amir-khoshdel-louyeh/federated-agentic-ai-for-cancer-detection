@@ -12,6 +12,34 @@ from ..controller import load_config, initialize_system, train_system
 
 
 def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
+
+	def save_models():
+		try:
+			config = train_state["config"]
+			out_dir = config.get("out_dir", "outputs")
+			hospitals = train_state["hospitals"]
+			for hid, hospital in hospitals.items():
+				if hasattr(hospital.scope.agent_portfolio, 'save_all_models'):
+					hospital.scope.agent_portfolio.save_all_models(out_dir, hospital.hospital_id)
+			status_var.set(f"Models saved to {out_dir}")
+		except Exception as e:
+			status_var.set(f"Error saving models: {e}")
+
+	def load_models():
+		import tkinter.filedialog as fd
+		try:
+			hospitals = train_state["hospitals"]
+			# Ask user for directory
+			model_dir = fd.askdirectory(title="Select Model Directory")
+			if not model_dir:
+				status_var.set("Model loading cancelled.")
+				return
+			for hid, hospital in hospitals.items():
+				if hasattr(hospital.scope.agent_portfolio, 'load_all_models'):
+					hospital.scope.agent_portfolio.load_all_models(model_dir, hospital.hospital_id)
+			status_var.set(f"Models loaded from {model_dir}")
+		except Exception as e:
+			status_var.set(f"Error loading models: {e}")
 	# --- Variables for toggling charts and image viewer ---
 	show_accuracy_chart_var = tk.BooleanVar(value=True)
 	show_loss_chart_var = tk.BooleanVar(value=True)
@@ -185,6 +213,9 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 					# Optionally set lifecycle_state if available
 					if hasattr(hospital, 'metrics_store') and 'lifecycle_state' in hospital.metrics_store:
 						hospital.scope.report_output["hospital"]["lifecycle_state"] = hospital.metrics_store['lifecycle_state']
+				# Save all agent models for this hospital
+				if hasattr(hospital.scope.agent_portfolio, 'save_all_models'):
+					hospital.scope.agent_portfolio.save_all_models(out_dir, hospital.hospital_id)
 				hospital_output = hospital.scope.report_output
 				save_paths[hid] = save_hospital_artifacts(hospital_output=hospital_output, out_dir=out_dir)
 			# Save a copy of config.yaml in out_dir
@@ -444,6 +475,12 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 
 	eval_save_btn = ttk.Button(button_bar, text="Evaluate && Save", command=lambda: threading.Thread(target=evaluate_and_save, daemon=True).start())
 	eval_save_btn.pack(fill="x", pady=(0, 10))
+
+	save_models_btn = ttk.Button(button_bar, text="Save Models", command=lambda: threading.Thread(target=save_models, daemon=True).start())
+	save_models_btn.pack(fill="x", pady=(0, 10))
+
+	load_models_btn = ttk.Button(button_bar, text="Load Models", command=lambda: threading.Thread(target=load_models, daemon=True).start())
+	load_models_btn.pack(fill="x", pady=(0, 10))
 	# --- Checkboxes for toggling charts and image viewer ---
 	checkbox_frame = ttk.LabelFrame(left_frame, text="Display Options")
 	checkbox_frame.pack(fill="x", padx=8, pady=(20, 0))
