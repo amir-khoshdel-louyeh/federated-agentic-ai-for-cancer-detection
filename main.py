@@ -26,8 +26,7 @@ data_split:
 sampling:
   total_samples: 1000  # Set to desired number, or null for all available
   random_seed: 42
-  # How to assign samples to hospitals: 'even' (divide equally), 'random' (random assignment)
-  hospital_sample_assignment: even
+  # Samples are always divided equally among hospitals. Total samples must be divisible by the number of hospitals.
 
 # # ========================
 # # SYSTEM SETUP
