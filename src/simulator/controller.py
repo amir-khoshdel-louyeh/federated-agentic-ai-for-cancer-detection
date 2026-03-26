@@ -129,6 +129,42 @@ def ensure_output_dirs(config):
     log_dir.mkdir(parents=True, exist_ok=True)
 
 
+# --- New function for GUI: run a single federated training round ---
+def run_one_training_round(orchestrator, hospitals, round_idx, for_training=True):
+    """
+    Run a single federated training round and return round output and agent metrics for GUI.
+    Args:
+        orchestrator: FederatedRoundOrchestrator instance
+        hospitals: dict of hospital_id -> HospitalNode
+        round_idx: int, current round index (1-based)
+        for_training: bool, whether to get local updates for training
+    Returns:
+        round_output: output from orchestrator.run_round
+        agent_metrics: dict of hospital_id -> agent metrics (if available)
+    """
+    # Train all hospitals for this round
+    for hospital in hospitals.values():
+        hospital.train()
+    # Collect local updates
+    local_updates = {hid: h.get_local_update(for_training=for_training) for hid, h in hospitals.items()}
+    # Run federated round
+    round_output = orchestrator.run_round(
+        round_index=round_idx,
+        local_updates=local_updates,
+    )
+    orchestrator.broadcast_global_state(hospitals, round_output.global_state)
+    # Optionally, collect agent metrics for GUI display
+    agent_metrics = {}
+    for hid, hospital in hospitals.items():
+        if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
+            metrics = {}
+            for cancer_type in hospital.scope.agent_portfolio.cancer_types:
+                agent = hospital.scope.agent_portfolio.get_agent(cancer_type)
+                metrics[cancer_type] = getattr(agent, "thinking_pattern_name", None)
+            agent_metrics[hid] = metrics
+    return round_output, agent_metrics
+
+
 
 # For GUI integration: call these functions in the desired order.
 # Example usage in GUI:

@@ -16,21 +16,21 @@ data_split:
   test: 0.1
 
 sampling:
-  total_samples: 1000  # Set to desired number, or null for all available
+  total_samples: 100  # Set to desired number, or null for all available
   random_seed: 42
   # Samples are always divided equally among hospitals. Total samples must be divisible by the number of hospitals.
 
 # # ========================
 # # SYSTEM SETUP
 # # ========================
-hospital_ids: HOSPITAL1
+hospital_ids: HOSPITAL1, HOSPITAL2
 num_agents_per_hospital: 4
 
 # # ========================
 # # FEDERATED LEARNING
 # # ========================
 federation:
-  aggregation_algorithm: no_operation
+  aggregation_algorithm: fedprox
   fedprox:
     mu: 0.1
   adaptive:
@@ -106,7 +106,8 @@ tracking:
 simulation:
   simulate_multi: true
   compare_all: true
-  num_rounds: 20
+  # num_rounds must be equal to total_samples divided by number of hospitals
+  num_rounds: 50  # 100 samples / 2 hospitals = 50 rounds
 
 # # ========================
 # # OUTPUT CONTROL

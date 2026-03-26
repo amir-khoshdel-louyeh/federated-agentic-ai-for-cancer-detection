@@ -82,7 +82,10 @@ def build_logs_tab(parent: ttk.Notebook, log_queue: queue.Queue = None) -> ttk.F
 	queue_handler.setFormatter(formatter)
 	logging.getLogger().addHandler(queue_handler)
 
+
 	def poll_log_queue():
+		if not log_text.winfo_exists():
+			return
 		while True:
 			try:
 				msg = log_queue.get_nowait()
