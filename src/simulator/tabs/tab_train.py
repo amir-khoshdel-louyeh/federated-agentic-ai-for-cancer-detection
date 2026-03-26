@@ -1,6 +1,4 @@
 """Train tab module."""
-
-
 import threading
 from tkinter import ttk
 import tkinter as tk
@@ -14,30 +12,43 @@ from ..controller import load_config, initialize_system, train_system
 
 
 def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
+	# Enable mouse wheel scrolling for charts_canvas
+	def _on_mousewheel(event):
+		# For Windows and MacOS
+		charts_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+	def _on_linux_mousewheel(event):
+		# For Linux (event.num 4=up, 5=down)
+		if event.num == 4:
+			charts_canvas.yview_scroll(-1, "units")
+		elif event.num == 5:
+			charts_canvas.yview_scroll(1, "units")
+
+	# Bind mouse wheel events after charts_canvas is defined
+	# (Move these lines after charts_canvas is created)
 
 	def on_close():
 		train_stop_flag["stop"] = True
 		train_pause_event.set()  # Unpause any waiting threads
 		# Optionally, add more cleanup here if needed
 		parent.winfo_toplevel().destroy()
-	def update_charts(agent_metrics):
-		import random
-		agent_name = next(iter(agent_metrics.keys())) if agent_metrics else "demo_agent"
-		if agent_name not in train_state["metrics_history"]:
-			train_state["metrics_history"][agent_name] = {m: [] for m in metrics_to_plot}
-		for metric in metrics_to_plot:
-			value = random.uniform(0.7, 1.0) if metric != "loss" else random.uniform(0.1, 0.5)
-			train_state["metrics_history"][agent_name][metric].append(value)
-		for metric in metrics_to_plot:
-			fig, ax = metric_figures[metric]
-			ax.clear()
-			ax.set_title(metric.capitalize())
-			ax.set_xlabel("Round")
-			ax.set_ylabel(metric.capitalize())
-			for agent, agent_metrics_hist in train_state["metrics_history"].items():
-				ax.plot(range(1, len(agent_metrics_hist[metric]) + 1), agent_metrics_hist[metric], label=agent)
-			ax.legend()
-			metric_canvases[metric].draw()
+		def update_charts(agent_metrics):
+			import random
+			agent_name = next(iter(agent_metrics.keys())) if agent_metrics else "demo_agent"
+			if agent_name not in train_state["metrics_history"]:
+				train_state["metrics_history"][agent_name] = {m: [] for m in metrics_to_plot}
+			for metric in metrics_to_plot:
+				value = random.uniform(0.7, 1.0) if metric != "loss" else random.uniform(0.1, 0.5)
+				train_state["metrics_history"][agent_name][metric].append(value)
+			for metric in metrics_to_plot:
+				fig, ax = metric_figures[metric]
+				ax.clear()
+				ax.set_title(metric.capitalize())
+				ax.set_xlabel("Round")
+				ax.set_ylabel(metric.capitalize())
+				for agent, agent_metrics_hist in train_state["metrics_history"].items():
+					ax.plot(range(1, len(agent_metrics_hist[metric]) + 1), agent_metrics_hist[metric], label=agent)
+				ax.legend()
+				metric_canvases[metric].draw()
 
 	def update_image_previews(round_idx):
 		hospital = next(iter(train_state["hospitals"].values()))
@@ -61,9 +72,9 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 		if img_path is not None:
 			from PIL import Image, ImageTk
 			img = Image.open(img_path)
-			img = img.resize((128, 128))
+			img = img.resize((256, 256))
 			tk_img = ImageTk.PhotoImage(img)
-			orig_img_canvas.configure(image=tk_img)
+			orig_img_canvas.configure(image=tk_img, width=256, height=256)
 			orig_img_canvas.image = tk_img
 		else:
 			orig_img_canvas.configure(image=None)
@@ -76,10 +87,10 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 			import sys
 			sys.path.append('src/client_side/pre_processing')
 			from src.client_side.pre_processing import pipeline
-			preproc_img = pipeline.preprocess_image(img_path, dullrazor=True, color_constancy=True, size=128)
+			preproc_img = pipeline.preprocess_image(img_path, dullrazor=True, color_constancy=True, size=256)
 			preproc_img_pil = Image.fromarray(preproc_img)
 			tk_preproc_img = ImageTk.PhotoImage(preproc_img_pil)
-			preproc_img_canvas.configure(image=tk_preproc_img, text="")
+			preproc_img_canvas.configure(image=tk_preproc_img, text="", width=256, height=256)
 			preproc_img_canvas.image = tk_preproc_img
 		except Exception as e:
 			preproc_img_canvas.configure(image=None, text=f"Preprocessing error: {e}")
@@ -115,14 +126,20 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 				# import time; time.sleep(0.1)
 		threading.Thread(target=run_all, daemon=True).start()
 
-	"""Create and return the Train tab frame."""
-	frame, content = build_scrollable_page(parent)
-	add_header(
-		content,
-		title="Federated Training",
-		subtitle="Start federated training for all hospital agents using the current configuration.",
-		badge="TRAIN"
-	)
+	# --- Divide page into left (10%) and right (90%) sections ---
+	frame = ttk.Frame(parent)
+	frame.pack(fill="both", expand=True)
+
+	left_frame = ttk.Frame(frame, width=150)
+	left_frame.pack(side="left", fill="y")
+	left_frame.pack_propagate(False)
+
+	right_frame = ttk.Frame(frame)
+	right_frame.pack(side="left", fill="both", expand=True)
+
+	# Use right_frame as the main content area
+	content = right_frame
+
 
 	status_var = tk.StringVar(value="Idle.")
 
@@ -143,31 +160,115 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 		"round_times": [],
 	}
 
-	# --- Metrics/Charts UI ---
-	charts_frame = ttk.Frame(content)
-	charts_frame.pack(fill="x", padx=20, pady=(8, 0))
 
-	# Placeholders for matplotlib figures (per metric)
+
+	# --- Status Bar (above images and charts) ---
+	status_label = ttk.Label(content, textvariable=status_var, style="Subheading.TLabel")
+	status_label.pack(anchor="w", padx=20, pady=(8, 0))
+
+	# --- Progress Bar (below status bar) ---
+	progress_var = tk.DoubleVar(value=0)
+	progress_bar = ttk.Progressbar(content, variable=progress_var, maximum=1.0)
+	progress_bar.pack(fill="x", padx=20, pady=(0, 8))
+
+	# --- Unified Scrollable Area: Images + Charts ---
+	charts_canvas = tk.Canvas(content, highlightthickness=0)
+	charts_canvas.pack(fill="both", expand=True, padx=20, pady=(0, 0))
+	charts_scrollbar = ttk.Scrollbar(content, orient="vertical", command=charts_canvas.yview)
+	charts_scrollbar.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
+	charts_canvas.configure(yscrollcommand=charts_scrollbar.set)
+	charts_frame = ttk.Frame(charts_canvas)
+	charts_frame_id = charts_canvas.create_window((0, 0), window=charts_frame, anchor="nw")
+
+	def _on_charts_frame_configure(event):
+		charts_canvas.configure(scrollregion=charts_canvas.bbox("all"))
+	charts_frame.bind("<Configure>", _on_charts_frame_configure)
+
+	def _on_canvas_configure(event):
+		charts_canvas.itemconfig(charts_frame_id, width=event.width)
+	charts_canvas.bind("<Configure>", _on_canvas_configure)
+
+	# Bind mouse wheel events after charts_canvas is defined
+	charts_canvas.bind_all("<MouseWheel>", _on_mousewheel)  # Windows/Mac
+	charts_canvas.bind_all("<Button-4>", _on_linux_mousewheel)  # Linux scroll up
+	charts_canvas.bind_all("<Button-5>", _on_linux_mousewheel)  # Linux scroll down
+
+	# --- Image Display UI (now inside charts_frame, above charts) ---
+	image_frame = ttk.Frame(charts_frame)
+	image_frame.grid(row=0, column=0, sticky="nsew", padx=0, pady=(0, 0))
+
+	orig_img_label = ttk.Label(image_frame, text="Original Image:")
+	orig_img_label.grid(row=0, column=0, sticky="w")
+
+	preproc_img_label = ttk.Label(image_frame, text="Preprocessed (features):")
+	preproc_img_label.grid(row=0, column=1, sticky="w")
+
+	orig_img_canvas = tk.Label(image_frame)
+	orig_img_canvas.grid(row=1, column=0, padx=8, pady=4)
+
+	preproc_img_canvas = tk.Label(image_frame)
+	preproc_img_canvas.grid(row=1, column=1, padx=8, pady=4)
+
+	# --- Metrics/Charts UI (below images, still inside charts_frame) ---
 	metric_figures = {}
 	metric_canvases = {}
-	metrics_to_plot = ["accuracy", "loss", "f1", "auc"]
+	metrics_to_plot = ["global_accuracy", "global_loss"]
 
 	for i, metric in enumerate(metrics_to_plot):
-		fig, ax = plt.subplots(figsize=(3, 2), dpi=100)
-		ax.set_title(metric.capitalize())
+		fig, ax = plt.subplots(figsize=(8, 4.5), dpi=100)
+		if metric == "global_accuracy":
+			title = "Global (Federated) Accuracy per Round"
+			ylabel = "Global Accuracy"
+		elif metric == "global_loss":
+			title = "Global Loss per Round"
+			ylabel = "Global Loss"
+		ax.set_title(title)
 		ax.set_xlabel("Round")
-		ax.set_ylabel(metric.capitalize())
+		ax.set_ylabel(ylabel)
 		canvas = FigureCanvasTkAgg(fig, master=charts_frame)
-		canvas.get_tk_widget().grid(row=0, column=i, padx=8)
+		canvas.get_tk_widget().grid(row=i+1, column=0, padx=8, pady=8, sticky="nsew")
 		metric_figures[metric] = (fig, ax)
 		metric_canvases[metric] = canvas
 
-	# --- End Metrics/Charts UI ---
+	# Make charts_frame expandable for both rows
+	charts_frame.grid_rowconfigure(0, weight=0)  # image row
+	charts_frame.grid_rowconfigure(1, weight=1)
+	charts_frame.grid_rowconfigure(2, weight=1)
+	charts_frame.grid_columnconfigure(0, weight=1)
 
-	# UI for image and metrics display
-	image_frame = ttk.Frame(content)
-	image_frame.pack(fill="x", padx=20, pady=(8, 0))
+	# --- End Unified Scrollable Area ---
 
+	def update_charts(agent_metrics):
+		import random
+		# Only update and plot global metrics
+		if "global_accuracy" not in train_state["global_metrics_history"]:
+			train_state["global_metrics_history"]["global_accuracy"] = []
+		if "global_loss" not in train_state["global_metrics_history"]:
+			train_state["global_metrics_history"]["global_loss"] = []
+		global_acc = random.uniform(0.7, 1.0)  # Replace with real value if available
+		global_loss = random.uniform(0.1, 0.5)  # Replace with real value if available
+		train_state["global_metrics_history"]["global_accuracy"].append(global_acc)
+		train_state["global_metrics_history"]["global_loss"].append(global_loss)
+		for metric in metrics_to_plot:
+			fig, ax = metric_figures[metric]
+			ax.clear()
+			if metric == "global_accuracy":
+				ax.set_title("Global Accuracy per Round")
+				ax.set_xlabel("Round")
+				ax.set_ylabel("Global Accuracy")
+				ax.plot(range(1, len(train_state["global_metrics_history"]["global_accuracy"]) + 1),
+						train_state["global_metrics_history"]["global_accuracy"], label="Global Accuracy", color="tab:blue")
+				ax.legend()
+			elif metric == "global_loss":
+				ax.set_title("Global Loss per Round")
+				ax.set_xlabel("Round")
+				ax.set_ylabel("Global Loss")
+				ax.plot(range(1, len(train_state["global_metrics_history"]["global_loss"]) + 1),
+						train_state["global_metrics_history"]["global_loss"], label="Global Loss", color="tab:red")
+				ax.legend()
+			metric_canvases[metric].draw()
+
+	# UI for image display (now inside image_frame above charts)
 	orig_img_label = ttk.Label(image_frame, text="Original Image:")
 	orig_img_label.grid(row=0, column=0, sticky="w")
 
@@ -195,6 +296,7 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 		train_state["orchestrator"] = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
 		train_state["current_round"] = 0
 		train_state["num_rounds"] = config["simulation"]["num_rounds"]
+		progress_var.set(0)
 		status_var.set("Ready. Click 'Next Round' to train.")
 
 	def run_one_round():
@@ -211,6 +313,11 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 			start_time = time.time()
 			train_state["current_round"] += 1
 			round_idx = train_state["current_round"]
+			# Update progress bar
+			if train_state["num_rounds"] > 0:
+				progress_var.set(round_idx / train_state["num_rounds"])
+			else:
+				progress_var.set(0)
 			status_var.set(f"Training round {round_idx}...")
 			logging.info(f"Training round {round_idx}...")
 			# Call controller to run one round
@@ -234,24 +341,27 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 	def on_next_round_click():
 		threading.Thread(target=run_one_round, daemon=True).start()
 
-	init_btn = ttk.Button(content, text="Initialize Training", command=on_initialize_click)
-	init_btn.pack(pady=8)
 
-	next_round_btn = ttk.Button(content, text="Next Round", command=on_next_round_click)
-	next_round_btn.pack(pady=8)
+	# --- Control Panel (Vertical Button Bar in left_frame) ---
+	button_bar = ttk.Frame(left_frame)
+	button_bar.pack(fill="y", pady=20)
 
+	init_btn = ttk.Button(button_bar, text="Initialize Training", command=on_initialize_click)
+	init_btn.pack(fill="x", pady=(0, 10))
 
-	train_all_btn = ttk.Button(content, text="Train All Rounds", command=train_all_rounds)
-	train_all_btn.pack(pady=8)
+	next_round_btn = ttk.Button(button_bar, text="Next Round", command=on_next_round_click)
+	next_round_btn.pack(fill="x", pady=(0, 10))
 
-	stop_btn = ttk.Button(content, text="Stop Training", command=stop_training)
-	stop_btn.pack(pady=8)
+	train_all_btn = ttk.Button(button_bar, text="Train All Rounds", command=train_all_rounds)
+	train_all_btn.pack(fill="x", pady=(0, 10))
 
-	continue_btn = ttk.Button(content, text="Continue Training", command=continue_training)
-	continue_btn.pack(pady=8)
+	stop_btn = ttk.Button(button_bar, text="Stop Training", command=stop_training)
+	stop_btn.pack(fill="x", pady=(0, 10))
 
-	status_label = ttk.Label(content, textvariable=status_var, style="Subheading.TLabel")
-	status_label.pack(anchor="w", padx=20, pady=(8, 0))
+	continue_btn = ttk.Button(button_bar, text="Continue Training", command=continue_training)
+	continue_btn.pack(fill="x", pady=(0, 10))
+	# --- End Control Panel ---
+
 
 	# Bind window close event to stop training threads
 	parent.winfo_toplevel().protocol("WM_DELETE_WINDOW", on_close)
