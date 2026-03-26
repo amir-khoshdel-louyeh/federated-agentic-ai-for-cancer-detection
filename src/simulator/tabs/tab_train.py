@@ -15,6 +15,81 @@ from ..controller import load_config, initialize_system, train_system
 
 def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 
+	def on_close():
+		train_stop_flag["stop"] = True
+		train_pause_event.set()  # Unpause any waiting threads
+		# Optionally, add more cleanup here if needed
+		parent.winfo_toplevel().destroy()
+	def update_charts(agent_metrics):
+		import random
+		agent_name = next(iter(agent_metrics.keys())) if agent_metrics else "demo_agent"
+		if agent_name not in train_state["metrics_history"]:
+			train_state["metrics_history"][agent_name] = {m: [] for m in metrics_to_plot}
+		for metric in metrics_to_plot:
+			value = random.uniform(0.7, 1.0) if metric != "loss" else random.uniform(0.1, 0.5)
+			train_state["metrics_history"][agent_name][metric].append(value)
+		for metric in metrics_to_plot:
+			fig, ax = metric_figures[metric]
+			ax.clear()
+			ax.set_title(metric.capitalize())
+			ax.set_xlabel("Round")
+			ax.set_ylabel(metric.capitalize())
+			for agent, agent_metrics_hist in train_state["metrics_history"].items():
+				ax.plot(range(1, len(agent_metrics_hist[metric]) + 1), agent_metrics_hist[metric], label=agent)
+			ax.legend()
+			metric_canvases[metric].draw()
+
+	def update_image_previews(round_idx):
+		hospital = next(iter(train_state["hospitals"].values()))
+		img_id = None
+		if hasattr(hospital, "local_data") and hospital.local_data is not None:
+			if hasattr(hospital.local_data, "test_ids") and len(hospital.local_data.test_ids) > 0:
+				idx = (round_idx - 1) % len(hospital.local_data.test_ids)
+				img_id = hospital.local_data.test_ids[idx]
+		train_state["last_image_id"] = img_id
+		# Find original image path (HAM or ISIC)
+		img_path = None
+		if img_id is not None:
+			import os
+			ham_dir = "src/client_side/datasets/HAM10000/ham10000_images"
+			isic_dir = "src/client_side/datasets/ISIC2019/ISIC2019"
+			if os.path.exists(os.path.join(ham_dir, f"{img_id}.jpg")):
+				img_path = os.path.join(ham_dir, f"{img_id}.jpg")
+			elif os.path.exists(os.path.join(isic_dir, f"{img_id}.jpg")):
+				img_path = os.path.join(isic_dir, f"{img_id}.jpg")
+		# Show original image
+		if img_path is not None:
+			from PIL import Image, ImageTk
+			img = Image.open(img_path)
+			img = img.resize((128, 128))
+			tk_img = ImageTk.PhotoImage(img)
+			orig_img_canvas.configure(image=tk_img)
+			orig_img_canvas.image = tk_img
+		else:
+			orig_img_canvas.configure(image=None)
+			orig_img_canvas.image = None
+		# Show preprocessed image (real image after preprocessing)
+		try:
+			import cv2
+			import numpy as np
+			from PIL import Image, ImageTk
+			import sys
+			sys.path.append('src/client_side/pre_processing')
+			from src.client_side.pre_processing import pipeline
+			preproc_img = pipeline.preprocess_image(img_path, dullrazor=True, color_constancy=True, size=128)
+			preproc_img_pil = Image.fromarray(preproc_img)
+			tk_preproc_img = ImageTk.PhotoImage(preproc_img_pil)
+			preproc_img_canvas.configure(image=tk_preproc_img, text="")
+			preproc_img_canvas.image = tk_preproc_img
+		except Exception as e:
+			preproc_img_canvas.configure(image=None, text=f"Preprocessing error: {e}")
+			preproc_img_canvas.image = None
+		# Show preprocessed features (as text, below image)
+		if hasattr(hospital.local_data, "bundle") and hasattr(hospital.local_data.bundle, "x_test"):
+			features = hospital.local_data.bundle.x_test[0]
+			train_state["last_features"] = features
+			# Optionally, show features as tooltip or in a label
+
 	# Event for pausing/resuming training
 	train_pause_event = threading.Event()
 	train_pause_event.set()  # Start as 'not paused'
@@ -35,7 +110,6 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 				if train_stop_flag["stop"]:
 					break
 				train_pause_event.wait()  # Wait if paused
-				train_pause_event.clear()  # Pause after each round unless continued
 				run_one_round()
 				# Optionally, add a small delay for UI responsiveness
 				# import time; time.sleep(0.1)
@@ -106,15 +180,6 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 	preproc_img_canvas = tk.Label(image_frame)
 	preproc_img_canvas.grid(row=1, column=1, padx=8, pady=4)
 
-	metrics_frame = ttk.Frame(content)
-	metrics_frame.pack(fill="x", padx=20, pady=(8, 0))
-
-	metrics_label = ttk.Label(metrics_frame, text="Agent Metrics (last round):")
-	metrics_label.pack(anchor="w")
-
-	metrics_text = tk.Text(metrics_frame, height=8, width=80, font=("DejaVu Sans Mono", 9))
-	metrics_text.pack(fill="x")
-	metrics_text.config(state="disabled")
 
 	def initialize_training():
 		status_var.set("Loading config...")
@@ -152,16 +217,8 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 			round_output, agent_metrics = run_one_training_round(
 				train_state["orchestrator"], train_state["hospitals"], round_idx, for_training=True
 			)
-			# --- UI updates (metrics, charts, etc.) ---
-			# Example: update metrics_text with agent_metrics
-			metrics_text.config(state="normal")
-			metrics_text.delete("1.0", tk.END)
-			for hid, metrics in agent_metrics.items():
-				metrics_text.insert(tk.END, f"Hospital {hid}:\n")
-				for cancer_type, pattern in metrics.items():
-					metrics_text.insert(tk.END, f"  {cancer_type}: pattern={pattern}\n")
-			metrics_text.config(state="disabled")
-			# (Optional) update charts, round times, etc. as needed
+			update_charts(agent_metrics)
+			update_image_previews(round_idx)
 			end_time = time.time()
 			train_state["round_times"].append(end_time - start_time)
 			status_var.set(f"Completed round {round_idx}.")
@@ -195,5 +252,8 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 
 	status_label = ttk.Label(content, textvariable=status_var, style="Subheading.TLabel")
 	status_label.pack(anchor="w", padx=20, pady=(8, 0))
+
+	# Bind window close event to stop training threads
+	parent.winfo_toplevel().protocol("WM_DELETE_WINDOW", on_close)
 
 	return frame

@@ -51,6 +51,8 @@ class DeepLearningThinkingPattern(ThinkingPattern):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         criterion = nn.BCEWithLogitsLoss()
 
+        torch.autograd.set_detect_anomaly(True)
+
         self.model.train()
         for _ in range(self.epochs):
             for xb, yb in loader:
