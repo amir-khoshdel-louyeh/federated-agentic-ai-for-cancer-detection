@@ -12,6 +12,11 @@ from ..controller import load_config, initialize_system, train_system
 
 
 def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
+	# --- Variables for toggling charts and image viewer ---
+	show_accuracy_chart_var = tk.BooleanVar(value=True)
+	show_loss_chart_var = tk.BooleanVar(value=True)
+	show_images_var = tk.BooleanVar(value=True)
+
 	# Enable mouse wheel scrolling for charts_canvas
 	def _on_mousewheel(event):
 		# For Windows and MacOS
@@ -51,6 +56,9 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 				metric_canvases[metric].draw()
 
 	def update_image_previews(round_idx):
+		# Only update images if enabled
+		if not show_images_var.get():
+			return
 		hospital = next(iter(train_state["hospitals"].values()))
 		img_id = None
 		if hasattr(hospital, "local_data") and hospital.local_data is not None:
@@ -240,7 +248,9 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 
 	def update_charts(agent_metrics):
 		import random
-		# Only update and plot global metrics
+		# Only update and plot global metrics if their chart is enabled
+		if not (show_accuracy_chart_var.get() or show_loss_chart_var.get()):
+			return
 		if "global_accuracy" not in train_state["global_metrics_history"]:
 			train_state["global_metrics_history"]["global_accuracy"] = []
 		if "global_loss" not in train_state["global_metrics_history"]:
@@ -250,6 +260,10 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 		train_state["global_metrics_history"]["global_accuracy"].append(global_acc)
 		train_state["global_metrics_history"]["global_loss"].append(global_loss)
 		for metric in metrics_to_plot:
+			if metric == "global_accuracy" and not show_accuracy_chart_var.get():
+				continue
+			if metric == "global_loss" and not show_loss_chart_var.get():
+				continue
 			fig, ax = metric_figures[metric]
 			ax.clear()
 			if metric == "global_accuracy":
@@ -360,6 +374,43 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 
 	continue_btn = ttk.Button(button_bar, text="Continue Training", command=continue_training)
 	continue_btn.pack(fill="x", pady=(0, 10))
+	# --- Checkboxes for toggling charts and image viewer ---
+	checkbox_frame = ttk.LabelFrame(left_frame, text="Display Options")
+	checkbox_frame.pack(fill="x", padx=8, pady=(20, 0))
+
+	show_accuracy_cb = ttk.Checkbutton(checkbox_frame, text="Accuracy Chart", variable=show_accuracy_chart_var, onvalue=True, offvalue=False)
+	show_accuracy_cb.pack(anchor="w", pady=(2, 2), padx=4)
+	show_loss_cb = ttk.Checkbutton(checkbox_frame, text="Loss Chart", variable=show_loss_chart_var, onvalue=True, offvalue=False)
+	show_loss_cb.pack(anchor="w", pady=(2, 2), padx=4)
+	show_images_cb = ttk.Checkbutton(checkbox_frame, text="Image Viewer", variable=show_images_var, onvalue=True, offvalue=False)
+	show_images_cb.pack(anchor="w", pady=(2, 2), padx=4)
+
+	def update_display_visibility(*args):
+		# Images
+		if show_images_var.get():
+			image_frame.grid()
+		else:
+			image_frame.grid_remove()
+		# Charts
+		for metric in metrics_to_plot:
+			canvas = metric_canvases[metric]
+			if metric == "global_accuracy":
+				if show_accuracy_chart_var.get():
+					canvas.get_tk_widget().grid()
+				else:
+					canvas.get_tk_widget().grid_remove()
+			elif metric == "global_loss":
+				if show_loss_chart_var.get():
+					canvas.get_tk_widget().grid()
+				else:
+					canvas.get_tk_widget().grid_remove()
+
+	show_accuracy_chart_var.trace_add('write', update_display_visibility)
+	show_loss_chart_var.trace_add('write', update_display_visibility)
+	show_images_var.trace_add('write', update_display_visibility)
+
+	# Initial call to set visibility
+	update_display_visibility()
 	# --- End Control Panel ---
 
 
