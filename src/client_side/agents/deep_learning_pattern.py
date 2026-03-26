@@ -14,10 +14,10 @@ class _MLP(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
+            nn.ReLU(inplace=False),
             nn.Dropout(0.2),
             nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
+            nn.ReLU(inplace=False),
             nn.Linear(hidden_dim // 2, 1),
         )
 
@@ -61,6 +61,8 @@ class DeepLearningThinkingPattern(ThinkingPattern):
                 optimizer.zero_grad()
                 logits = self.model(xb)
                 loss = criterion(logits, yb)
+                # Ensure no in-place ops before backward
+                loss = loss.clone()  # Defensive: avoid in-place modification
                 loss.backward()
                 optimizer.step()
 

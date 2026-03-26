@@ -130,9 +130,76 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 					break
 				train_pause_event.wait()  # Wait if paused
 				run_one_round()
-				# Optionally, add a small delay for UI responsiveness
-				# import time; time.sleep(0.1)
+			# After all rounds, evaluate and save
+			if train_state["current_round"] >= train_state["num_rounds"]:
+				status_var.set("Evaluating and saving artifacts...")
+				try:
+					import shutil
+					from ..controller import load_config
+					from src.client_side.hospital.artifacts import save_hospital_artifacts
+					config = train_state["config"]
+					out_dir = config.get("out_dir", "outputs")
+					hospitals = train_state["hospitals"]
+					eval_results = {}
+					save_paths = {}
+					for hid, hospital in hospitals.items():
+						eval_results[hid] = hospital.evaluate()
+						# Ensure hospital_id is set correctly in output
+						if hasattr(hospital, 'hospital_id'):
+							hospital.scope.report_output["hospital_id"] = hospital.hospital_id
+						hospital_output = hospital.scope.report_output
+						save_paths[hid] = save_hospital_artifacts(hospital_output=hospital_output, out_dir=out_dir)
+					# Save a copy of config.yaml in out_dir
+					config_src = "configs/config.yaml"
+					config_dst = f"{out_dir}/config.yaml"
+					shutil.copyfile(config_src, config_dst)
+					# Show summary in status bar
+					status_msg = "Evaluation and saving complete.\n"
+					for hid, paths in save_paths.items():
+						status_msg += f"{hid}: Saved to {paths['full_output_path']}\n"
+					status_msg += f"Config saved to {config_dst}"
+					status_var.set(status_msg)
+				except Exception as e:
+					import traceback
+					status_var.set(f"Error during evaluation/saving: {e}")
+					logging.error(f"Error during evaluation/saving: {e}\nTraceback:\n{traceback.format_exc()}")
 		threading.Thread(target=run_all, daemon=True).start()
+	def evaluate_and_save():
+		status_var.set("Evaluating and saving artifacts...")
+		try:
+			import shutil
+			from ..controller import load_config
+			from src.client_side.hospital.artifacts import save_hospital_artifacts
+			config = train_state["config"]
+			out_dir = config.get("out_dir", "outputs")
+			hospitals = train_state["hospitals"]
+			eval_results = {}
+			save_paths = {}
+			for hid, hospital in hospitals.items():
+				eval_results[hid] = hospital.evaluate()
+				# Ensure 'hospital' key is populated for correct filename
+				if hasattr(hospital, 'hospital_id'):
+					if "hospital" not in hospital.scope.report_output or not isinstance(hospital.scope.report_output["hospital"], dict):
+						hospital.scope.report_output["hospital"] = {}
+					hospital.scope.report_output["hospital"]["hospital_id"] = hospital.hospital_id
+					# Optionally set lifecycle_state if available
+					if hasattr(hospital, 'metrics_store') and 'lifecycle_state' in hospital.metrics_store:
+						hospital.scope.report_output["hospital"]["lifecycle_state"] = hospital.metrics_store['lifecycle_state']
+				hospital_output = hospital.scope.report_output
+				save_paths[hid] = save_hospital_artifacts(hospital_output=hospital_output, out_dir=out_dir)
+			# Save a copy of config.yaml in out_dir
+			config_src = "configs/config.yaml"
+			config_dst = f"{out_dir}/config.yaml"
+			shutil.copyfile(config_src, config_dst)
+			status_msg = "Evaluation and saving complete.\n"
+			for hid, paths in save_paths.items():
+				status_msg += f"{hid}: Saved to {paths['full_output_path']}\n"
+			status_msg += f"Config saved to {config_dst}"
+			status_var.set(status_msg)
+		except Exception as e:
+			import traceback
+			status_var.set(f"Error during evaluation/saving: {e}")
+			logging.error(f"Error during evaluation/saving: {e}\nTraceback:\n{traceback.format_exc()}")
 
 	# --- Divide page into left (10%) and right (90%) sections ---
 	frame = ttk.Frame(parent)
@@ -374,6 +441,9 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 
 	continue_btn = ttk.Button(button_bar, text="Continue Training", command=continue_training)
 	continue_btn.pack(fill="x", pady=(0, 10))
+
+	eval_save_btn = ttk.Button(button_bar, text="Evaluate && Save", command=lambda: threading.Thread(target=evaluate_and_save, daemon=True).start())
+	eval_save_btn.pack(fill="x", pady=(0, 10))
 	# --- Checkboxes for toggling charts and image viewer ---
 	checkbox_frame = ttk.LabelFrame(left_frame, text="Display Options")
 	checkbox_frame.pack(fill="x", padx=8, pady=(20, 0))
