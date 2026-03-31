@@ -54,9 +54,10 @@ def initialize_system(config):
 
 def train_system(config, hospitals):
     """Run federated training rounds."""
+    import json
+    from pathlib import Path
     aggregation_name = config["federation"]["aggregation_algorithm"]
     num_hospitals = len(hospitals)
-    # Enforce no_operation for single-hospital, forbid for multi-hospital
     if num_hospitals == 1:
         if aggregation_name != "no_operation":
             logging.warning("Single-hospital mode detected. Overriding aggregation algorithm to 'no_operation'.")
@@ -65,6 +66,14 @@ def train_system(config, hospitals):
         raise ValueError("'no_operation' aggregation can only be used with a single hospital.")
     orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
     num_rounds = config["simulation"]["num_rounds"]
+
+    # Prepare output directory
+    out_dir = Path(config.get("output", {}).get("history_dir", "outputs/history"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Prepare per-hospital logs
+    hospital_logs = {hid: [] for hid in hospitals}
+    log_paths = {hid: out_dir / f"{hid}_metrics.json" for hid in hospitals}
+
     for round_idx in range(1, num_rounds + 1):
         for hospital in hospitals.values():
             hospital.train()
@@ -75,6 +84,22 @@ def train_system(config, hospitals):
         )
         orchestrator.broadcast_global_state(hospitals, round_output.global_state)
         logging.info(f"Completed round {round_idx}")
+
+        # Collect and append metrics/state for each hospital
+        for hid, hospital in hospitals.items():
+            entry = {
+                "round": round_idx,
+                "metrics": getattr(hospital, "metrics_store", {}),
+                "local_update": local_updates.get(hid, {}),
+                "global_state": getattr(orchestrator, "global_state", {}),
+            }
+            hospital_logs[hid].append(entry)
+
+    # Write all rounds to a single JSON file per hospital
+    for hid, log in hospital_logs.items():
+        with open(log_paths[hid], "w") as f:
+            json.dump(log, f, indent=2)
+
     return orchestrator
 
 def test_system(hospitals):

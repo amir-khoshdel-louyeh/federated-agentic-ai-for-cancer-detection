@@ -5,6 +5,9 @@ from typing import Any, Literal, Mapping
 
 import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_auc_score
+import warnings
+from sklearn.exceptions import UndefinedMetricWarning
+warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 from ..agents import SkinCancerAgent
 
@@ -114,6 +117,7 @@ class HospitalNode(HospitalLifecycleContract):
         val_predictions: dict[str, np.ndarray] = {}
         test_predictions: dict[str, np.ndarray] = {}
         training_warnings: dict[str, str] = {}
+        per_agent_metrics: dict[str, dict] = {}
 
         for cancer_type in self.scope.agent_portfolio.cancer_types:
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
@@ -122,7 +126,7 @@ class HospitalNode(HospitalLifecycleContract):
 
             x_train, y_train = self.get_cancer_filtered_split(cancer_type=cancer_type, split="train")
             x_val, _ = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
-            x_test, _ = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
+            x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
 
             # Some local hospital splits can miss positives for a cancer subtype.
             if np.unique(y_train).size < 2:
@@ -142,13 +146,22 @@ class HospitalNode(HospitalLifecycleContract):
             val_predictions[agent.name] = val_probs
             test_predictions[agent.name] = test_probs
 
+            # Compute and store per-agent metrics for test split
+            if len(y_test) > 0:
+                metrics = self._compute_binary_metrics(y_test, test_probs)
+                per_agent_metrics[agent.name] = metrics
+
+        # Convert all predictions to lists for JSON serialization
         self.metrics_store["predictions"] = {
-            "val": val_predictions,
-            "test": test_predictions,
+            "val": {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in val_predictions.items()},
+            "test": {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in test_predictions.items()},
         }
         if training_warnings:
             self.metrics_store["training_warnings"] = training_warnings
 
+        # Store per-agent metrics for federation
+        self.metrics_store.setdefault("evaluation", {})["test"] = per_agent_metrics
+        print(f"[DEBUG] Hospital {self.hospital_id} per_agent_metrics: {per_agent_metrics}")
         self.metrics_store["lifecycle_state"] = "trained"
 
     def apply_adaptive_pattern_policy(
@@ -170,38 +183,39 @@ class HospitalNode(HospitalLifecycleContract):
 
         for cancer_type, pattern_name in updated_patterns.items():
             if current_patterns.get(cancer_type) == pattern_name:
-                continue
-            self.scope.agent_portfolio.set_pattern(cancer_type, create_thinking_pattern(pattern_name))
+                @staticmethod
+                def _compute_binary_metrics(y_true: np.ndarray, probs: np.ndarray) -> dict[str, float]:
+                    preds = (probs >= 0.5).astype(int)
+                    accuracy = float(accuracy_score(y_true, preds))
+                    f1 = float(f1_score(y_true, preds, zero_division=0))
+                    try:
+                        auc = roc_auc_score(y_true, probs)
+                    except ValueError:
+                        auc = 0.5
 
-        selected = self.scope.agent_portfolio.selected_patterns()
-        self.metrics_store["selected_patterns"] = selected
-        self.metrics_store["adaptive_policy_applied"] = True
-        return selected
+                    # Ensure auc is finite
+                    if not np.isfinite(auc):
+                        auc = 0.0
 
-    def evaluate(self) -> dict[str, Any]:
-        """Run local predictions and return per-agent evaluation artifacts."""
-        if self.scope.data is None:
-            raise RuntimeError("Call initialize() before evaluate().")
-        if self.scope.agent_portfolio is None:
-            raise RuntimeError("HospitalNode requires an agent portfolio before evaluate().")
+                    # labels=[0, 1] guarantees stable unpacking for degenerate splits.
+                    tn, fp, fn, tp = confusion_matrix(y_true, preds, labels=[0, 1]).ravel()
+                    sensitivity = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+                    specificity = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
 
-        prediction_store = self.metrics_store.get("predictions", {})
-        val_predictions = prediction_store.get("val", {})
-        test_predictions = prediction_store.get("test", {})
-        if not test_predictions:
-            raise RuntimeError("Call train() before evaluate() to generate prediction artifacts.")
-
-        test_metrics = {
-            key: self._compute_binary_metrics(self.scope.data.y_test, probs)
-            for key, probs in test_predictions.items()
-        }
-        val_metrics = {
-            key: self._compute_binary_metrics(self.scope.data.y_val, probs)
-            for key, probs in val_predictions.items()
-        }
-
-        selected_patterns = self.metrics_store.get("selected_patterns", {})
-        selected_performance: dict[str, dict[str, Any]] = {}
+                    metrics = {
+                        "accuracy": float(accuracy),
+                        "f1": float(f1),
+                        "auc": float(auc) if np.isfinite(auc) else 0.0,
+                        "sensitivity": float(sensitivity),
+                        "specificity": float(specificity),
+                    }
+                    # Ensure all metrics are float and finite
+                    for k, v in metrics.items():
+                        if not np.isfinite(v):
+                            metrics[k] = 0.0
+                        else:
+                            metrics[k] = float(v)
+                    return metrics
         for cancer_type, pattern_name in selected_patterns.items():
             prediction_key = f"{cancer_type.lower()}::{pattern_name}"
             selected_performance[cancer_type] = {
@@ -233,9 +247,13 @@ class HospitalNode(HospitalLifecycleContract):
         accuracy = float(accuracy_score(y_true, preds))
         f1 = float(f1_score(y_true, preds, zero_division=0))
         try:
-            auc = float(roc_auc_score(y_true, probs))
+            auc = roc_auc_score(y_true, probs)
         except ValueError:
             auc = 0.5
+
+        # Ensure auc is finite
+        if not np.isfinite(auc):
+            auc = 0.0
 
         # labels=[0, 1] guarantees stable unpacking for degenerate splits.
         tn, fp, fn, tp = confusion_matrix(y_true, preds, labels=[0, 1]).ravel()
@@ -245,10 +263,14 @@ class HospitalNode(HospitalLifecycleContract):
         return {
             "accuracy": accuracy,
             "f1": f1,
-            "auc": auc,
+            "auc": auc if np.isfinite(auc) else 0.0,
             "sensitivity": sensitivity,
             "specificity": specificity,
         }
+        # Ensure all metrics are finite
+        for k, v in metrics.items():
+            if not np.isfinite(v):
+                metrics[k] = 0.0
 
     @staticmethod
     def _build_candidate_comparisons(
@@ -337,6 +359,10 @@ class HospitalNode(HospitalLifecycleContract):
                 "random_seed": int(self.metrics_store.get("random_seed", 0)),
             },
         )
+        # Debug print for metrics.per_agent
+        per_agent_metrics = output.get("metrics", {}).get("per_agent", {})
+        print(f"[DEBUG] Hospital {self.hospital_id} metrics.per_agent: {per_agent_metrics}")
+        assert per_agent_metrics, f"metrics.per_agent is empty for hospital {self.hospital_id}!"
         self.scope.report_output = output
         return output
 
@@ -362,3 +388,46 @@ class HospitalNode(HospitalLifecycleContract):
             "lifecycle_state": str(self.metrics_store.get("lifecycle_state", "created")),
             "schema_version": str(self.scope.report_output.get("schema_version", "1.0.0")),
         }
+
+    def evaluate(self):
+        prediction_store = self.metrics_store.get("predictions", {})
+        val_predictions = prediction_store.get("val", {})
+        test_predictions = prediction_store.get("test", {})
+        if not test_predictions:
+            raise RuntimeError("Call train() before evaluate() to generate prediction artifacts.")
+
+        test_metrics = {
+            key: self._compute_binary_metrics(self.scope.data.y_test, probs)
+            for key, probs in test_predictions.items()
+        }
+        val_metrics = {
+            key: self._compute_binary_metrics(self.scope.data.y_val, probs)
+            for key, probs in val_predictions.items()
+        }
+
+        selected_patterns = self.metrics_store.get("selected_patterns", {})
+        selected_performance: dict[str, dict[str, Any]] = {}
+        for cancer_type, pattern_name in selected_patterns.items():
+            prediction_key = f"{cancer_type.lower()}::{pattern_name}"
+            selected_performance[cancer_type] = {
+                "pattern": pattern_name,
+                "validation": val_metrics.get(prediction_key, {}),
+                "test": test_metrics.get(prediction_key, {}),
+            }
+
+        candidate_comparisons = self._build_candidate_comparisons(val_metrics)
+
+        self.metrics_store["evaluation"] = {
+            "validation": val_metrics,
+            "test": test_metrics,
+            "selected_performance": selected_performance,
+            "candidate_pattern_comparisons": candidate_comparisons,
+        }
+        self.scope.report_output = {
+            "hospital_id": self.hospital_id,
+            "metrics": self.metrics_store["evaluation"],
+            "selected_patterns": self.metrics_store.get("selected_patterns", {}),
+        }
+        self.metrics_store["lifecycle_state"] = "evaluated"
+
+        return self.scope.report_output
