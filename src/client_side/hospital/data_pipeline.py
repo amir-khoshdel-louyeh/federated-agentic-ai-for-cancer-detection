@@ -87,27 +87,10 @@ class LocalDataPipeline:
             kwargs["ham_metadata_csv"] = ham_metadata_csv
         if isic_labels_csv is not None:
             kwargs["isic_labels_csv"] = isic_labels_csv
+        # Pass hospital_id and hospital_ids to activate per-hospital chunking
+        kwargs["hospital_id"] = self.hospital_id
+        kwargs["hospital_ids"] = self.hospital_ids
         splits = self.dataset_handler.load(**kwargs)
-
-        # --- Sample allocation logic ---
-        if self.config is not None and self.hospital_id is not None and self.hospital_ids is not None:
-            total_samples = self.config.get("sampling", {}).get("total_samples", None)
-            random_seed = self.config.get("sampling", {}).get("random_seed", 42)
-            if total_samples is not None:
-                num_hospitals = len(self.hospital_ids)
-                if total_samples % num_hospitals != 0:
-                    raise ValueError(f"Total samples ({total_samples}) must be divisible by number of hospitals ({num_hospitals}).")
-                n_samples = total_samples // num_hospitals
-                rng = np.random.default_rng(random_seed)
-                idx = self.hospital_ids.index(self.hospital_id)
-                # Subsample for this hospital
-                if n_samples and n_samples < splits.x_train.shape[0]:
-                    selected = rng.choice(splits.x_train.shape[0], size=n_samples, replace=False)
-                    splits.x_train = splits.x_train[selected]
-                    splits.y_train = splits.y_train[selected]
-                    splits.cancer_train = splits.cancer_train[selected]
-        # --- End sample allocation logic ---
-
         return self._to_local_data(splits)
 
     @staticmethod

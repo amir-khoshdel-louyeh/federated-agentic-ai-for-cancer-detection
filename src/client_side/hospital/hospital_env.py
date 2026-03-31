@@ -51,9 +51,10 @@ class VirtualHospital:
         self,
         ham_metadata_csv: str | Path = None,
         isic_labels_csv: str | Path = None,
-        test_size: float = 0.2,
-        val_size: float = 0.2,
+        hospital_id: str = None,
+        hospital_ids: list = None,
     ) -> HospitalSplits:
+        # Load data
         dfs = []
         if ham_metadata_csv is not None:
             dfs.append(self._load_ham10000(ham_metadata_csv))
@@ -68,25 +69,55 @@ class VirtualHospital:
         ids = data["image_id"].to_numpy()
         cancer_types = data["cancer_type"].to_numpy(dtype=str)
 
-        x_train_val, x_test, y_train_val, y_test, id_train_val, id_test, cancer_train_val, cancer_test = train_test_split(
-            x,
-            y,
-            ids,
-            cancer_types,
-            test_size=test_size,
-            random_state=self.random_state,
-            stratify=y,
-        )
+        # Subsample and split among hospitals if requested
+        total_samples = self.config.get("sampling", {}).get("total_samples", None) if self.config else None
+        hospital_ids = hospital_ids or (self.config.get("hospital_ids", []) if self.config else [])
+        if isinstance(hospital_ids, str):
+            hospital_ids = [h.strip() for h in hospital_ids.split(",")]
+        hospital_id = hospital_id or (self.config.get("hospital_id") if self.config else None)
+        if total_samples is not None and hospital_id and hospital_ids:
+            num_hospitals = len(hospital_ids)
+            if total_samples % num_hospitals != 0:
+                raise ValueError(f"Total samples ({total_samples}) must be divisible by number of hospitals ({num_hospitals}).")
+            n_samples = total_samples // num_hospitals
+            idx = hospital_ids.index(hospital_id)
+            rng = np.random.default_rng(self.random_state)
+            all_indices = np.arange(len(x))
+            rng.shuffle(all_indices)
+            if total_samples > len(x):
+                raise ValueError(f"Requested total_samples ({total_samples}) exceeds available samples ({len(x)}).")
+            selected = all_indices[idx * n_samples : (idx + 1) * n_samples]
+            x = x[selected]
+            y = y[selected]
+            ids = ids[selected]
+            cancer_types = cancer_types[selected]
 
-        x_train, x_val, y_train, y_val, _, _, cancer_train, cancer_val = train_test_split(
-            x_train_val,
-            y_train_val,
-            id_train_val,
-            cancer_train_val,
-            test_size=val_size,
-            random_state=self.random_state,
-            stratify=y_train_val,
-        )
+        # Get split ratios from config, fallback to defaults
+        split_cfg = self.config.get("data_split", {}) if self.config else {}
+        train_ratio = float(split_cfg.get("train", 0.8))
+        val_ratio = float(split_cfg.get("validation", 0.1))
+        test_ratio = float(split_cfg.get("test", 0.1))
+        total = train_ratio + val_ratio + test_ratio
+        train_ratio /= total
+        val_ratio /= total
+        test_ratio /= total
+
+        # Shuffle and split indices for this hospital's chunk
+        n = len(x)
+        rng = np.random.default_rng(self.random_state)
+        indices = np.arange(n)
+        rng.shuffle(indices)
+        n_train = int(n * train_ratio)
+        n_val = int(n * val_ratio)
+        n_test = n - n_train - n_val
+        train_idx = indices[:n_train]
+        val_idx = indices[n_train:n_train+n_val]
+        test_idx = indices[n_train+n_val:]
+
+        x_train, y_train, cancer_train = x[train_idx], y[train_idx], cancer_types[train_idx]
+        x_val, y_val, cancer_val = x[val_idx], y[val_idx], cancer_types[val_idx]
+        x_test, y_test, cancer_test = x[test_idx], y[test_idx], cancer_types[test_idx]
+        test_ids = ids[test_idx]
 
         return HospitalSplits(
             x_train=x_train,
@@ -95,7 +126,7 @@ class VirtualHospital:
             y_val=y_val,
             x_test=x_test,
             y_test=y_test,
-            test_ids=id_test,
+            test_ids=test_ids,
             cancer_train=cancer_train,
             cancer_val=cancer_val,
             cancer_test=cancer_test,

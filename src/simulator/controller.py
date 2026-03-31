@@ -19,10 +19,17 @@ def make_hospitals(config, data_pipeline):
     for hid in hospital_ids:
         patterns = {ct: create_thinking_pattern(agent_patterns[ct]) for ct in agent_patterns}
         portfolio = AgentPortfolio(initial_patterns=patterns)
+        # Each hospital gets its own pipeline with correct ids
+        pipeline = LocalDataPipeline(
+            hospital_id=hid,
+            hospital_ids=hospital_ids,
+            config=config
+        )
         hospital_kwargs = dict(
             hospital_id=hid,
-            data_pipeline=data_pipeline,
+            data_pipeline=pipeline,
             agent_portfolio=portfolio,
+            config=config
         )
         if "HAM10000" in enabled_datasets:
             hospital_kwargs["ham_metadata_csv"] = config["ham_csv"]
