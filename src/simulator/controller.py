@@ -119,6 +119,14 @@ def train_system(config, hospitals):
         with open(federated_decision_path, "w") as f:
             json.dump(federated_decision_log, f, indent=2)
 
+    # After training, save all models for each hospital to outputs/system
+    system_dir = Path("outputs/system")
+    system_dir.mkdir(parents=True, exist_ok=True)
+    for hid, hospital in hospitals.items():
+        if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
+            portfolio = hospital.scope.agent_portfolio
+            if hasattr(portfolio, "save_all_models"):
+                portfolio.save_all_models(str(system_dir), hid)
     return orchestrator
 
 def test_system(hospitals):
