@@ -183,13 +183,24 @@ Expected files:
 - HAM10000 metadata CSV (for example `HAM10000_metadata.csv`)
 - ISIC 2019 ground truth CSV (for example `ISIC_2019_Training_GroundTruth.csv`)
 
-### Run
+
+### Run (CLI Mode)
+
+You can now use a command-line interface to run the system using your config.yaml:
+
+```bash
+python main.py cli --config configs/config.yaml
+```
+
+This will load all parameters from `configs/config.yaml` and run the CLI interface defined in `src/simulator/cli.py`.
+
+You can still run the original hospital main for local-only experiments:
 
 ```bash
 python -m src.hospital.main \
-	--ham-csv data/raw/ham10000/HAM10000_metadata.csv \
-	--isic-csv data/raw/isic2019/ISIC_2019_Training_GroundTruth.csv \
-	--out-dir outputs
+  --ham-csv data/raw/ham10000/HAM10000_metadata.csv \
+  --isic-csv data/raw/isic2019/ISIC_2019_Training_GroundTruth.csv \
+  --out-dir outputs
 ```
 
 ### Outputs

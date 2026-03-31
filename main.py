@@ -140,5 +140,11 @@ def ensure_config():
 
 
 if __name__ == "__main__":
-    ensure_config()
+  import sys
+  ensure_config()
+  if len(sys.argv) > 1 and sys.argv[1] == "cli":
+    # Remove 'cli' from sys.argv so argparse in cli.py works as expected
+    sys.argv.pop(1)
+    runpy.run_path("src/simulator/cli.py", run_name="__main__")
+  else:
     runpy.run_module("src.simulator.simulator", run_name="__main__")
