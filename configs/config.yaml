@@ -62,6 +62,10 @@ agents:
       AKIEC: bayesian
     allow_dynamic_switch: true
 
+# # FINALIZER AGENT CONFIGURATION
+finalizer:
+  threshold: 0.5  # Confidence threshold for clean/no-cancer decision
+
 # # ========================
 # # META-AGENT CONTROL
 # # ========================
