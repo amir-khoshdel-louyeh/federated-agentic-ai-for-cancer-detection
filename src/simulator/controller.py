@@ -73,6 +73,9 @@ def train_system(config, hospitals):
     # Prepare per-hospital logs
     hospital_logs = {hid: [] for hid in hospitals}
     log_paths = {hid: out_dir / f"{hid}_metrics.json" for hid in hospitals}
+    # Prepare federated decision log
+    federated_decision_log = []
+    federated_decision_path = out_dir / "federated_decision.json"
 
     for round_idx in range(1, num_rounds + 1):
         for hospital in hospitals.values():
@@ -94,11 +97,27 @@ def train_system(config, hospitals):
                 "global_state": getattr(orchestrator, "global_state", {}),
             }
             hospital_logs[hid].append(entry)
+            # Write the log after each round for this hospital
+            with open(log_paths[hid], "w") as f:
+                json.dump(hospital_logs[hid], f, indent=2)
 
-    # Write all rounds to a single JSON file per hospital
-    for hid, log in hospital_logs.items():
-        with open(log_paths[hid], "w") as f:
-            json.dump(log, f, indent=2)
+        # Collect and write federated decision for this round
+        federated_decision_log.append({
+            "round": round_idx,
+            "aggregator_name": round_output.aggregator_name,
+            "global_state": round_output.global_state,
+            "aggregation": {
+                "algorithm": round_output.aggregation.algorithm,
+                "global_metrics": round_output.aggregation.global_metrics,
+                "hospital_weights": round_output.aggregation.hospital_weights,
+                "included_hospital_ids": round_output.aggregation.included_hospital_ids,
+                "dropped_hospitals": round_output.aggregation.dropped_hospitals,
+                "details": round_output.aggregation.details,
+            },
+            "validation_report": round_output.validation_report,
+        })
+        with open(federated_decision_path, "w") as f:
+            json.dump(federated_decision_log, f, indent=2)
 
     return orchestrator
 
