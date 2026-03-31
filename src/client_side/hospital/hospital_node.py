@@ -216,6 +216,30 @@ class HospitalNode(HospitalLifecycleContract):
                         else:
                             metrics[k] = float(v)
                     return metrics
+
+    def evaluate(self) -> dict[str, Any]:
+        """Evaluate all fixed cancer agents and store metrics for validation and test splits."""
+        if self.scope.data is None:
+            raise RuntimeError("Call initialize() before evaluate().")
+        if self.scope.agent_portfolio is None:
+            raise RuntimeError("HospitalNode requires an agent portfolio before evaluate().")
+        if self.local_data is None:
+            raise RuntimeError("Call initialize() before evaluate().")
+
+        val_metrics = {}
+        test_metrics = {}
+        selected_patterns = self.metrics_store.get("selected_patterns", self.scope.agent_portfolio.selected_patterns())
+        selected_performance = {}
+
+        for cancer_type, pattern_name in selected_patterns.items():
+            agent = self.scope.agent_portfolio.get_agent(cancer_type)
+            x_val, y_val = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
+            x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
+            val_probs = agent.predict_proba(x_val)
+            test_probs = agent.predict_proba(x_test)
+            val_metrics[f"{cancer_type.lower()}::{pattern_name}"] = self._compute_binary_metrics(y_val, val_probs)
+            test_metrics[f"{cancer_type.lower()}::{pattern_name}"] = self._compute_binary_metrics(y_test, test_probs)
+
         for cancer_type, pattern_name in selected_patterns.items():
             prediction_key = f"{cancer_type.lower()}::{pattern_name}"
             selected_performance[cancer_type] = {

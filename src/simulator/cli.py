@@ -28,12 +28,33 @@ def main():
 	# Step 2: Initialize system
 	hospitals = initialize_system(config)
 
+
 	# Print split sizes for each hospital
 	print("\n=== Data Split Sizes Per Hospital ===")
+	all_test_ids = {}
 	for hid, hospital in hospitals.items():
 		split_sizes = hospital.metrics_store.get("split_sizes", {})
 		print(f"Hospital {hid}: {split_sizes}")
+		# Try to get test_ids from local_data
+		test_ids = None
+		if hasattr(hospital, "local_data") and hospital.local_data is not None:
+			test_ids = getattr(hospital.local_data, "test_ids", None)
+		if test_ids is not None:
+			all_test_ids[hid] = set(test_ids.tolist() if hasattr(test_ids, 'tolist') else list(test_ids))
 	print("====================================\n")
+
+	# Check uniqueness of test_ids between hospitals
+	is_unique = True
+	if len(all_test_ids) > 1:
+		all_ids = list(all_test_ids.values())
+		for i in range(len(all_ids)):
+			for j in range(i+1, len(all_ids)):
+				if set(all_ids[i]) & set(all_ids[j]):
+					is_unique = False
+	if all_test_ids:
+		print(f"Data between hospitals is {'UNIQUE' if is_unique else 'NOT UNIQUE'} (based on test_ids).\n")
+	else:
+		print("[Warning] Could not check data uniqueness: test_ids not available.\n")
 
 	if args.command == 'train':
 		print("Starting federated training...")
