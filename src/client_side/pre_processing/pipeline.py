@@ -94,13 +94,34 @@ def preprocess_image(img_path: str, dullrazor: bool = True, color_constancy: boo
 
 # Example usage for a pipeline
 class PreprocessingPipeline:
-    def __init__(self, dullrazor=True, color_constancy=True, size=224):
+    def __init__(self, dullrazor=True, color_constancy=True, size=224, augment=False):
         self.dullrazor = dullrazor
         self.color_constancy = color_constancy
         self.size = size
+        self.augment = augment
+
+        # Define torchvision augmentations to mimic clinical variability
+        self.augmentation = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomVerticalFlip(),
+            transforms.RandomRotation(degrees=20),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05),
+            transforms.ToTensor(),
+        ])
 
     def process(self, img_path: str) -> np.ndarray:
-        return preprocess_image(img_path, self.dullrazor, self.color_constancy, self.size)
+        img = preprocess_image(img_path, self.dullrazor, self.color_constancy, self.size)
+        if self.augment:
+            img = self.augment_image(img)
+        return img
+
+    def augment_image(self, img: np.ndarray) -> np.ndarray:
+        # img: np.ndarray (HWC, uint8)
+        img_aug = self.augmentation(img)
+        # Convert back to numpy, scale to 0-255, uint8
+        img_aug = (img_aug.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+        return img_aug
 
     def process_metadata(self, row: pd.Series) -> np.ndarray:
         return encode_metadata(row)

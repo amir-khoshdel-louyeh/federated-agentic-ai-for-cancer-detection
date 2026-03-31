@@ -123,7 +123,9 @@ def build_train_tab(parent: ttk.Notebook) -> ttk.Frame:
 			import sys
 			sys.path.append('src/client_side/pre_processing')
 			from src.client_side.pre_processing import pipeline
-			preproc_img = pipeline.preprocess_image(img_path, dullrazor=True, color_constancy=True, size=256)
+			# Use the new pipeline with augmentation enabled
+			preproc_pipeline = pipeline.PreprocessingPipeline(dullrazor=True, color_constancy=True, size=256, augment=True)
+			preproc_img = preproc_pipeline.process(img_path)
 			preproc_img_pil = Image.fromarray(preproc_img)
 			tk_preproc_img = ImageTk.PhotoImage(preproc_img_pil)
 			preproc_img_canvas.configure(image=tk_preproc_img, text="", width=256, height=256)
