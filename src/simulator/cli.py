@@ -1,11 +1,14 @@
 import argparse
+
+from networkx import config
 from configs.config_loader import load_config
 from src.simulator.controller import (
 	initialize_system,
 	train_system,
 	test_system,
 	show_results,
-	show_log_location
+	show_log_location,
+	validation_system
 )
 
 def main():
@@ -53,19 +56,15 @@ def main():
 					is_unique = False
 	if all_test_ids:
 		print(f"Data between hospitals is {'UNIQUE' if is_unique else 'NOT UNIQUE'} (based on test_ids).\n")
-	else:
-		print("[Warning] Could not check data uniqueness: test_ids not available.\n")
-
-	if args.command == 'train':
 		print("Starting federated training...")
 		train_system(config, hospitals)
 		print("Training complete.")
-		show_log_location(config)
-	elif args.command == 'test':
-		print("Running evaluation on test data...")
-		results = test_system(hospitals)
-		show_results(results)
-		show_log_location(config)
+		validation_system(hospitals)
+		#print("Running evaluation on test data...")
+		#results = test_system(hospitals)
+		#show_results(results)
+		#show_log_location(config)
+		
 
 if __name__ == "__main__":
 	main()

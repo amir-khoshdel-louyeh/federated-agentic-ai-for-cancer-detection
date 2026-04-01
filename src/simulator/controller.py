@@ -52,8 +52,18 @@ def initialize_system(config):
     logging.info("System initialized.")
     return hospitals
 
-def train_system(config, hospitals):
-    """Run federated training rounds."""
+def train_system(config, hospitals, save_history=False, save_models=False):
+    """Run federated training rounds.
+
+    Args:
+        config (dict): configuration object.
+        hospitals (dict): hospital_id -> HospitalNode.
+        save_history (bool): if True, writes per-round metrics and decision files.
+        save_models (bool): if True, saves local models at end.
+
+    Returns:
+        FederatedRoundOrchestrator
+    """
     import json
     from pathlib import Path
     aggregation_name = config["federation"]["aggregation_algorithm"]
@@ -67,15 +77,14 @@ def train_system(config, hospitals):
     orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
     num_rounds = config["simulation"]["num_rounds"]
 
-    # Prepare output directory
+    # Optionally prepare output directory and log paths
     out_dir = Path(config.get("output", {}).get("history_dir", "outputs/history"))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    # Prepare per-hospital logs
     hospital_logs = {hid: [] for hid in hospitals}
     log_paths = {hid: out_dir / f"{hid}_metrics.json" for hid in hospitals}
-    # Prepare federated decision log
     federated_decision_log = []
     federated_decision_path = out_dir / "federated_decision.json"
+    if save_history:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     for round_idx in range(1, num_rounds + 1):
         for hospital in hospitals.values():
@@ -88,7 +97,7 @@ def train_system(config, hospitals):
         orchestrator.broadcast_global_state(hospitals, round_output.global_state)
         logging.info(f"Completed round {round_idx}")
 
-        # Collect and append metrics/state for each hospital
+        # Collect and append metrics/state for each hospital in-memory
         for hid, hospital in hospitals.items():
             entry = {
                 "round": round_idx,
@@ -97,11 +106,11 @@ def train_system(config, hospitals):
                 "global_state": getattr(orchestrator, "global_state", {}),
             }
             hospital_logs[hid].append(entry)
-            # Write the log after each round for this hospital
-            with open(log_paths[hid], "w") as f:
-                json.dump(hospital_logs[hid], f, indent=2)
+            if save_history:
+                with open(log_paths[hid], "w") as f:
+                    json.dump(hospital_logs[hid], f, indent=2)
 
-        # Collect and write federated decision for this round
+        # Collect and optionally write federated decision for this round
         federated_decision_log.append({
             "round": round_idx,
             "aggregator_name": round_output.aggregator_name,
@@ -116,17 +125,19 @@ def train_system(config, hospitals):
             },
             "validation_report": round_output.validation_report,
         })
-        with open(federated_decision_path, "w") as f:
-            json.dump(federated_decision_log, f, indent=2)
+        if save_history:
+            with open(federated_decision_path, "w") as f:
+                json.dump(federated_decision_log, f, indent=2)
 
-    # After training, save all models for each hospital to outputs/system
-    system_dir = Path("outputs/system")
-    system_dir.mkdir(parents=True, exist_ok=True)
-    for hid, hospital in hospitals.items():
-        if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
-            portfolio = hospital.scope.agent_portfolio
-            if hasattr(portfolio, "save_all_models"):
-                portfolio.save_all_models(str(system_dir), hid)
+    # After training, optionally save all models for each hospital to outputs/system
+    if save_models:
+        system_dir = Path("outputs/system")
+        system_dir.mkdir(parents=True, exist_ok=True)
+        for hid, hospital in hospitals.items():
+            if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
+                portfolio = hospital.scope.agent_portfolio
+                if hasattr(portfolio, "save_all_models"):
+                    portfolio.save_all_models(str(system_dir), hid)
     return orchestrator
 
 def test_system(hospitals):
@@ -223,6 +234,76 @@ def run_one_training_round(orchestrator, hospitals, round_idx, for_training=True
             agent_metrics[hid] = metrics
     return round_output, agent_metrics
 
+
+def validation_system(hospitals, output_dir=None, early_stop_threshold=None, save_to_disk=False):
+    import json
+    from pathlib import Path
+
+    if output_dir is None:
+        output_dir = Path("outputs/history")
+    else:
+        output_dir = Path(output_dir)
+
+    if save_to_disk:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    validation_reports = {}
+    for hid, hospital in hospitals.items():
+        if hospital.local_data is None:
+            raise RuntimeError(f"Hospital {hid} must be initialized before validation_system().")
+        if hospital.scope is None or hospital.scope.agent_portfolio is None:
+            raise RuntimeError(f"Hospital {hid} must have an agent portfolio before validation_system().")
+
+        hospital_validation = {}
+        for cancer_type in hospital.scope.agent_portfolio.cancer_types:
+            agent = hospital.scope.agent_portfolio.get_agent(cancer_type)
+            x_val, y_val = hospital.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
+            if x_val is None or len(x_val) == 0:
+                hospital_validation[cancer_type] = {
+                    "agent": agent.name,
+                    "metrics": {},
+                    "warning": "No validation samples for this cancer type.",
+                }
+                continue
+
+            val_probs = agent.predict_proba(x_val)
+            metrics = hospital._compute_binary_metrics(y_val, val_probs)
+            hospital_validation[cancer_type] = {
+                "agent": agent.name,
+                "metrics": metrics,
+            }
+
+        hospital.metrics_store.setdefault("validation", {})["results"] = hospital_validation
+        hospital.metrics_store["lifecycle_state"] = "validated"
+
+        validation_reports[hid] = hospital_validation
+
+        if save_to_disk:
+            with open(output_dir / f"{hid}_validation_metrics.json", "w") as f:
+                json.dump({"hospital_id": hid, "validation": hospital_validation}, f, indent=2)
+
+            logging.info(f"Saved validation metrics for hospital {hid} to {output_dir / f'{hid}_validation_metrics.json'}")
+        else:
+            logging.info(f"Validation metrics computed for hospital {hid}; disk save is disabled.")
+
+    should_stop = False
+    if early_stop_threshold is not None:
+        # simple early stopping rule: stop if average validation f1 drops below threshold.
+        all_f1_scores = []
+        for hid, hospital_validation in validation_reports.items():
+            for cancer_cfg in hospital_validation.values():
+                score = cancer_cfg.get("metrics", {}).get("f1")
+                if score is not None:
+                    all_f1_scores.append(score)
+
+        if len(all_f1_scores) > 0:
+            avg_f1 = float(sum(all_f1_scores) / len(all_f1_scores))
+            should_stop = avg_f1 < float(early_stop_threshold)
+            logging.info(f"Validation avg_f1={avg_f1:.4f}, early_stop_threshold={early_stop_threshold}, should_stop={should_stop}")
+
+    if early_stop_threshold is not None:
+        return validation_reports, should_stop
+    return validation_reports
 
 
 # For GUI integration: call these functions in the desired order.
