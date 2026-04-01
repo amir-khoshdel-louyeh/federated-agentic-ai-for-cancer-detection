@@ -15,9 +15,16 @@ def make_hospitals(config, data_pipeline):
     hospital_ids = [h.strip() for h in config["hospital_ids"].split(",")]
     agent_patterns = config["agents"]["patterns"]["default_mapping"]
     enabled_datasets = config.get("enabled_datasets", [])
+    num_epoch = int(config.get("simulation", {}).get("num_epoch", 1))
     hospitals = {}
     for hid in hospital_ids:
-        patterns = {ct: create_thinking_pattern(agent_patterns[ct]) for ct in agent_patterns}
+        patterns = {
+            ct: create_thinking_pattern(
+                agent_patterns[ct],
+                deep_learning_epochs=num_epoch,
+            )
+            for ct in agent_patterns
+        }
         portfolio = AgentPortfolio(initial_patterns=patterns)
         # Each hospital gets its own pipeline with correct ids
         pipeline = LocalDataPipeline(
@@ -52,6 +59,41 @@ def initialize_system(config):
     logging.info("System initialized.")
     return hospitals
 
+
+def _compute_validation_f1_score(validation_reports):
+    """Return average f1 over all hospitals and cancer types in validation reports."""
+    scores = []
+    for hid, report in validation_reports.items():
+        for cancer_type, cancer_data in report.items():
+            f1 = cancer_data.get("metrics", {}).get("f1")
+            if f1 is not None:
+                scores.append(float(f1))
+    if not scores:
+        return 0.0
+    return float(sum(scores) / len(scores))
+
+
+def _save_epoch_checkpoint(hospitals, checkpoint_dir):
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    for hid, hospital in hospitals.items():
+        if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
+            portfolio = hospital.scope.agent_portfolio
+            if hasattr(portfolio, "save_all_models"):
+                portfolio.save_all_models(str(checkpoint_dir), hid)
+
+
+def _restore_epoch_checkpoint(hospitals, checkpoint_dir):
+    checkpoint_dir = Path(checkpoint_dir)
+    if not checkpoint_dir.exists():
+        raise FileNotFoundError(f"Checkpoint directory not found: {checkpoint_dir}")
+    for hid, hospital in hospitals.items():
+        if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
+            portfolio = hospital.scope.agent_portfolio
+            if hasattr(portfolio, "load_all_models"):
+                portfolio.load_all_models(str(checkpoint_dir), hid)
+
+
 def train_system(config, hospitals, save_history=False, save_models=False):
     """Run federated training rounds.
 
@@ -75,7 +117,11 @@ def train_system(config, hospitals, save_history=False, save_models=False):
     elif aggregation_name == "no_operation":
         raise ValueError("'no_operation' aggregation can only be used with a single hospital.")
     orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
-    num_rounds = config["simulation"]["num_rounds"]
+
+    num_epochs = int(config.get("simulation", {}).get("num_epoch", 1))
+    num_rounds = int(config.get("simulation", {}).get("num_rounds", 1))
+    if num_epochs < 1 or num_rounds < 1:
+        raise ValueError("simulation.num_epoch and simulation.num_rounds must both be positive integers.")
 
     # Optionally prepare output directory and log paths
     out_dir = Path(config.get("output", {}).get("history_dir", "outputs/history"))
@@ -86,48 +132,88 @@ def train_system(config, hospitals, save_history=False, save_models=False):
     if save_history:
         out_dir.mkdir(parents=True, exist_ok=True)
 
-    for round_idx in range(1, num_rounds + 1):
-        for hospital in hospitals.values():
-            hospital.train()
-        local_updates = {hid: h.get_local_update() for hid, h in hospitals.items()}
-        round_output = orchestrator.run_round(
-            round_index=round_idx,
-            local_updates=local_updates,
-        )
-        orchestrator.broadcast_global_state(hospitals, round_output.global_state)
-        logging.info(f"Completed round {round_idx}")
+    early_stop_threshold = config.get("simulation", {}).get("early_stop_threshold")
+    checkpoint_base = Path(config.get("output", {}).get("checkpoint_dir", "outputs/checkpoints"))
+    best_val_score = -1.0
+    best_epoch = None
 
-        # Collect and append metrics/state for each hospital in-memory
-        for hid, hospital in hospitals.items():
-            entry = {
+    for epoch_idx in range(1, num_epochs + 1):
+        logging.info(f"Starting federated training epoch {epoch_idx}/{num_epochs}")
+        for round_idx in range(1, num_rounds + 1):
+            global_round_idx = (epoch_idx - 1) * num_rounds + round_idx
+
+            for hospital in hospitals.values():
+                hospital.train()
+
+            local_updates = {hid: h.get_local_update() for hid, h in hospitals.items()}
+            round_output = orchestrator.run_round(
+                round_index=global_round_idx,
+                local_updates=local_updates,
+            )
+            orchestrator.broadcast_global_state(hospitals, round_output.global_state)
+            logging.info(f"Completed epoch {epoch_idx}/{num_epochs}, round {round_idx}/{num_rounds} (global round {global_round_idx})")
+
+            # Collect and append metrics/state for each hospital in-memory
+            for hid, hospital in hospitals.items():
+                entry = {
+                    "epoch": epoch_idx,
+                    "round": round_idx,
+                    "global_round": global_round_idx,
+                    "metrics": getattr(hospital, "metrics_store", {}),
+                    "local_update": local_updates.get(hid, {}),
+                    "global_state": getattr(orchestrator, "global_state", {}),
+                }
+                hospital_logs[hid].append(entry)
+                if save_history:
+                    with open(log_paths[hid], "w") as f:
+                        json.dump(hospital_logs[hid], f, indent=2)
+
+            # Collect and optionally write federated decision for this round
+            federated_decision_log.append({
+                "epoch": epoch_idx,
                 "round": round_idx,
-                "metrics": getattr(hospital, "metrics_store", {}),
-                "local_update": local_updates.get(hid, {}),
-                "global_state": getattr(orchestrator, "global_state", {}),
-            }
-            hospital_logs[hid].append(entry)
+                "global_round": global_round_idx,
+                "aggregator_name": round_output.aggregator_name,
+                "global_state": round_output.global_state,
+                "aggregation": {
+                    "algorithm": round_output.aggregation.algorithm,
+                    "global_metrics": round_output.aggregation.global_metrics,
+                    "hospital_weights": round_output.aggregation.hospital_weights,
+                    "included_hospital_ids": round_output.aggregation.included_hospital_ids,
+                    "dropped_hospitals": round_output.aggregation.dropped_hospitals,
+                    "details": round_output.aggregation.details,
+                },
+                "validation_report": round_output.validation_report,
+            })
             if save_history:
-                with open(log_paths[hid], "w") as f:
-                    json.dump(hospital_logs[hid], f, indent=2)
+                with open(federated_decision_path, "w") as f:
+                    json.dump(federated_decision_log, f, indent=2)
 
-        # Collect and optionally write federated decision for this round
-        federated_decision_log.append({
-            "round": round_idx,
-            "aggregator_name": round_output.aggregator_name,
-            "global_state": round_output.global_state,
-            "aggregation": {
-                "algorithm": round_output.aggregation.algorithm,
-                "global_metrics": round_output.aggregation.global_metrics,
-                "hospital_weights": round_output.aggregation.hospital_weights,
-                "included_hospital_ids": round_output.aggregation.included_hospital_ids,
-                "dropped_hospitals": round_output.aggregation.dropped_hospitals,
-                "details": round_output.aggregation.details,
-            },
-            "validation_report": round_output.validation_report,
-        })
-        if save_history:
-            with open(federated_decision_path, "w") as f:
-                json.dump(federated_decision_log, f, indent=2)
+        # Validate at end of epoch
+        validation_result = validation_system(hospitals, output_dir=out_dir, early_stop_threshold=early_stop_threshold, save_to_disk=save_history)
+        if isinstance(validation_result, tuple):
+            validation_reports, should_stop = validation_result
+        else:
+            validation_reports, should_stop = validation_result, False
+
+        epoch_val_score = _compute_validation_f1_score(validation_reports)
+        logging.info(f"Epoch {epoch_idx} validation avg_f1={epoch_val_score:.4f} (best={best_val_score:.4f})")
+
+        if epoch_val_score > best_val_score:
+            best_val_score = epoch_val_score
+            best_epoch = epoch_idx
+            _save_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{epoch_idx}")
+
+        if should_stop:
+            logging.info(f"Early stopping triggered at epoch {epoch_idx}. Restoring best model from epoch {best_epoch}.")
+            if best_epoch is not None:
+                _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
+            break
+
+    # on completion, if early stop was not triggered, optionally restore best model
+    if best_epoch is not None and (not should_stop):
+        logging.info(f"Training completed. Restoring best model from epoch {best_epoch}.")
+        _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
 
     # After training, optionally save all models for each hospital to outputs/system
     if save_models:
@@ -179,17 +265,57 @@ def run_federated_learning(config, hospitals):
     """Run the federated learning rounds."""
     aggregation_name = config["federation"]["aggregation_algorithm"]
     orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
-    num_rounds = config["simulation"]["num_rounds"]
-    for round_idx in range(1, num_rounds + 1):
-        for hospital in hospitals.values():
-            hospital.train()
-        local_updates = {hid: h.get_local_update() for hid, h in hospitals.items()}
-        round_output = orchestrator.run_round(
-            round_index=round_idx,
-            local_updates=local_updates,
-        )
-        orchestrator.broadcast_global_state(hospitals, round_output.global_state)
-        logging.info(f"Completed round {round_idx}")
+
+    num_epochs = int(config.get("simulation", {}).get("num_epoch", 1))
+    num_rounds = int(config.get("simulation", {}).get("num_rounds", 1))
+    if num_epochs < 1 or num_rounds < 1:
+        raise ValueError("simulation.num_epoch and simulation.num_rounds must both be positive integers.")
+
+    early_stop_threshold = config.get("simulation", {}).get("early_stop_threshold")
+    checkpoint_base = Path(config.get("output", {}).get("checkpoint_dir", "outputs/checkpoints"))
+    best_val_score = -1.0
+    best_epoch = None
+    should_stop = False
+
+    for epoch_idx in range(1, num_epochs + 1):
+        logging.info(f"Starting federated training epoch {epoch_idx}/{num_epochs}")
+        for round_idx in range(1, num_rounds + 1):
+            global_round_idx = (epoch_idx - 1) * num_rounds + round_idx
+
+            for hospital in hospitals.values():
+                hospital.train()
+
+            local_updates = {hid: h.get_local_update() for hid, h in hospitals.items()}
+            round_output = orchestrator.run_round(
+                round_index=global_round_idx,
+                local_updates=local_updates,
+            )
+            orchestrator.broadcast_global_state(hospitals, round_output.global_state)
+            logging.info(f"Completed epoch {epoch_idx}/{num_epochs}, round {round_idx}/{num_rounds} (global round {global_round_idx})")
+
+        validation_result = validation_system(hospitals, output_dir=checkpoint_base, early_stop_threshold=early_stop_threshold, save_to_disk=False)
+        if isinstance(validation_result, tuple):
+            validation_reports, should_stop = validation_result
+        else:
+            validation_reports, should_stop = validation_result, False
+
+        epoch_val_score = _compute_validation_f1_score(validation_reports)
+        logging.info(f"Epoch {epoch_idx} validation avg_f1={epoch_val_score:.4f} (best={best_val_score:.4f})")
+
+        if epoch_val_score > best_val_score:
+            best_val_score = epoch_val_score
+            best_epoch = epoch_idx
+            _save_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{epoch_idx}")
+
+        if should_stop:
+            logging.info(f"Early stopping triggered at epoch {epoch_idx}. Restoring best model from epoch {best_epoch}.")
+            if best_epoch is not None:
+                _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
+            break
+
+    if best_epoch is not None and (not should_stop):
+        logging.info(f"Training completed. Restoring best model from epoch {best_epoch}.")
+        _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
 
 def ensure_output_dirs(config):
     """Ensure output and log directories exist."""

@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from networkx import config
 from configs.config_loader import load_config
@@ -12,20 +13,8 @@ from src.simulator.controller import (
 )
 
 def main():
-	parser = argparse.ArgumentParser(description="Federated Agentic AI CLI")
-	parser.add_argument('--config', type=str, default='configs/config.yaml', help='Path to config.yaml')
-	subparsers = parser.add_subparsers(dest='command', required=True)
-
-	# Train command
-	train_parser = subparsers.add_parser('train', help='Run federated training')
-
-	# Test command
-	test_parser = subparsers.add_parser('test', help='Run evaluation on test data')
-
-	args = parser.parse_args()
-
 	# Step 1: Load config.yaml
-	config = load_config(args.config)
+	config = load_config()
 
 
 	# Step 2: Initialize system
@@ -46,6 +35,12 @@ def main():
 			all_test_ids[hid] = set(test_ids.tolist() if hasattr(test_ids, 'tolist') else list(test_ids))
 	print("====================================\n")
 
+	# Resolve and print log path according to config
+	log_dir = config.get("tracking", {}).get("log_dir", config.get("out_dir", "outputs") + "/logs")
+	log_file = config.get("tracking", {}).get("log_file_name", "simulation.log")
+	log_path = Path(log_dir) / log_file
+	print(f"Using log file: {log_path.resolve()}")
+
 	# Check uniqueness of test_ids between hospitals
 	is_unique = True
 	if len(all_test_ids) > 1:
@@ -60,10 +55,10 @@ def main():
 		train_system(config, hospitals)
 		print("Training complete.")
 		validation_system(hospitals)
-		#print("Running evaluation on test data...")
-		#results = test_system(hospitals)
-		#show_results(results)
-		#show_log_location(config)
+		print("Running evaluation on test data...")
+		results = test_system(hospitals)
+		show_results(results)
+		show_log_location(config)
 		
 
 if __name__ == "__main__":

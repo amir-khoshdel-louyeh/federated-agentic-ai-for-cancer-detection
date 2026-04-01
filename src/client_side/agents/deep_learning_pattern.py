@@ -65,7 +65,9 @@ class DeepLearningThinkingPattern(ThinkingPattern):
         dataset = TensorDataset(torch.from_numpy(x_scaled), torch.from_numpy(y).unsqueeze(1))
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
-        self.model = _MLP(input_dim=x_train.shape[1]).to(self.device)
+        if self.model is None or self.model.net[0].in_features != x_train.shape[1]:
+            self.model = _MLP(input_dim=x_train.shape[1]).to(self.device)
+
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         criterion = nn.BCEWithLogitsLoss()
 

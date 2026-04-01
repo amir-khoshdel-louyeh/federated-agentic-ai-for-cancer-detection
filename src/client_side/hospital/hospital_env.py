@@ -69,6 +69,14 @@ class VirtualHospital:
         ids = data["image_id"].to_numpy()
         cancer_types = data["cancer_type"].to_numpy(dtype=str)
 
+        # Shuffle whole combined dataset first (reproducible via random_state)
+        rng = np.random.default_rng(self.random_state)
+        perm = rng.permutation(len(x))
+        x = x[perm]
+        y = y[perm]
+        ids = ids[perm]
+        cancer_types = cancer_types[perm]
+
         # Subsample and split among hospitals if requested
         total_samples = self.config.get("sampling", {}).get("total_samples", None) if self.config else None
         hospital_ids = hospital_ids or (self.config.get("hospital_ids", []) if self.config else [])
@@ -97,27 +105,53 @@ class VirtualHospital:
         train_ratio = float(split_cfg.get("train", 0.8))
         val_ratio = float(split_cfg.get("validation", 0.1))
         test_ratio = float(split_cfg.get("test", 0.1))
+        stratify = bool(split_cfg.get("stratify", True))
+
         total = train_ratio + val_ratio + test_ratio
         train_ratio /= total
         val_ratio /= total
         test_ratio /= total
 
-        # Shuffle and split indices for this hospital's chunk
-        n = len(x)
-        rng = np.random.default_rng(self.random_state)
-        indices = np.arange(n)
-        rng.shuffle(indices)
-        n_train = int(n * train_ratio)
-        n_val = int(n * val_ratio)
-        n_test = n - n_train - n_val
-        train_idx = indices[:n_train]
-        val_idx = indices[n_train:n_train+n_val]
-        test_idx = indices[n_train+n_val:]
+        # stratified split by binary target (malignancy) if possible
+        if stratify and len(np.unique(y)) > 1:
+            x_temp, x_test, y_temp, y_test, ids_temp, ids_test, cancer_temp, cancer_test = train_test_split(
+                x,
+                y,
+                ids,
+                cancer_types,
+                test_size=test_ratio,
+                stratify=y,
+                random_state=self.random_state,
+            )
+            # split remaining into train/val
+            val_adj = val_ratio / (train_ratio + val_ratio)
+            x_train, x_val, y_train, y_val, ids_train, ids_val, cancer_train, cancer_val = train_test_split(
+                x_temp,
+                y_temp,
+                ids_temp,
+                cancer_temp,
+                test_size=val_adj,
+                stratify=y_temp,
+                random_state=self.random_state,
+            )
+            test_ids = ids_test
+        else:
+            # Shuffle and split indices for this hospital's chunk
+            n = len(x)
+            rng = np.random.default_rng(self.random_state)
+            indices = np.arange(n)
+            rng.shuffle(indices)
+            n_train = int(n * train_ratio)
+            n_val = int(n * val_ratio)
+            n_test = n - n_train - n_val
+            train_idx = indices[:n_train]
+            val_idx = indices[n_train:n_train+n_val]
+            test_idx = indices[n_train+n_val:]
 
-        x_train, y_train, cancer_train = x[train_idx], y[train_idx], cancer_types[train_idx]
-        x_val, y_val, cancer_val = x[val_idx], y[val_idx], cancer_types[val_idx]
-        x_test, y_test, cancer_test = x[test_idx], y[test_idx], cancer_types[test_idx]
-        test_ids = ids[test_idx]
+            x_train, y_train, cancer_train = x[train_idx], y[train_idx], cancer_types[train_idx]
+            x_val, y_val, cancer_val = x[val_idx], y[val_idx], cancer_types[val_idx]
+            x_test, y_test, cancer_test = x[test_idx], y[test_idx], cancer_types[test_idx]
+            test_ids = ids[test_idx]
 
         return HospitalSplits(
             x_train=x_train,

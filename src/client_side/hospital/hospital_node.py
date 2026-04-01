@@ -119,6 +119,8 @@ class HospitalNode(HospitalLifecycleContract):
         training_warnings: dict[str, str] = {}
         per_agent_metrics: dict[str, dict] = {}
 
+        max_local_samples = int(self.config.get("training", {}).get("max_local_samples", 0)) if self.config else 0
+
         for cancer_type in self.scope.agent_portfolio.cancer_types:
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             if not isinstance(agent, SkinCancerAgent):
@@ -127,6 +129,12 @@ class HospitalNode(HospitalLifecycleContract):
             x_train, y_train = self.get_cancer_filtered_split(cancer_type=cancer_type, split="train")
             x_val, _ = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
             x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
+
+            if max_local_samples > 0 and x_train.shape[0] > max_local_samples:
+                rng = np.random.default_rng(self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42)
+                sel_idx = rng.choice(x_train.shape[0], size=max_local_samples, replace=False)
+                x_train = x_train[sel_idx]
+                y_train = y_train[sel_idx]
 
             # Some local hospital splits can miss positives for a cancer subtype.
             if np.unique(y_train).size < 2:
@@ -266,12 +274,14 @@ class HospitalNode(HospitalLifecycleContract):
         return self.scope.report_output
 
     @staticmethod
-    def _compute_binary_metrics(y_true: np.ndarray, probs: np.ndarray) -> dict[str, float]:
-        preds = (probs >= 0.5).astype(int)
+    def _compute_binary_metrics(y_true: np.ndarray, probs) -> dict[str, float]:
+        # Ensure `probs` is numpy-compatible for comparisons (list-backed outputs may occur)
+        probs_arr = np.asarray(probs, dtype=np.float32)
+        preds = (probs_arr >= 0.5).astype(int)
         accuracy = float(accuracy_score(y_true, preds))
         f1 = float(f1_score(y_true, preds, zero_division=0))
         try:
-            auc = roc_auc_score(y_true, probs)
+            auc = roc_auc_score(y_true, probs_arr)
         except ValueError:
             auc = 0.5
 
