@@ -51,6 +51,14 @@ def main():
 					is_unique = False
 	if all_test_ids:
 		print(f"Data between hospitals is {'UNIQUE' if is_unique else 'NOT UNIQUE'} (based on test_ids).\n")
+
+	# choose k-fold vs single pipeline
+	k_folds = int(config.get("data_split", {}).get("k_folds", 1))
+	if k_folds > 1:
+		from src.simulator.k_fold_runner import run_k_fold_experiment
+		print(f"Running k-fold cross-validation: {k_folds} folds")
+		run_k_fold_experiment(config)
+	else:
 		print("Starting federated training...")
 		train_system(config, hospitals)
 		print("Training complete.")

@@ -8,6 +8,7 @@ import numpy as np
 
 from .contracts import HospitalDataBundle
 from .hospital_env import HospitalSplits, VirtualHospital
+from .augmentations import augment_dataset
 
 SPLIT_NAMES = ("train", "val", "test")
 CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
@@ -91,6 +92,24 @@ class LocalDataPipeline:
         kwargs["hospital_id"] = self.hospital_id
         kwargs["hospital_ids"] = self.hospital_ids
         splits = self.dataset_handler.load(**kwargs)
+
+        if self.config is not None and self.config.get("augmentation", {}).get("enabled", False):
+            mode = self.config.get("data_split", {}).get("mode", "tabular")
+            if mode in ("tabular", "combined"):
+                x_train_aug, y_train_aug = augment_dataset(splits.x_train, splits.y_train, self.config)
+                splits = HospitalSplits(
+                    x_train=x_train_aug,
+                    y_train=y_train_aug,
+                    x_val=splits.x_val,
+                    y_val=splits.y_val,
+                    x_test=splits.x_test,
+                    y_test=splits.y_test,
+                    test_ids=splits.test_ids,
+                    cancer_train=splits.cancer_train,
+                    cancer_val=splits.cancer_val,
+                    cancer_test=splits.cancer_test,
+                )
+
         return self._to_local_data(splits)
 
     @staticmethod

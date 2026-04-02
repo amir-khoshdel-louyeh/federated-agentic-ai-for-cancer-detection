@@ -6,8 +6,10 @@ from ..agents import (
     BayesianThinkingPattern,
     DeepLearningThinkingPattern,
     LogisticThinkingPattern,
+    MCDropoutThinkingPattern,
     RuleBasedStrictThinkingPattern,
     RuleBasedThinkingPattern,
+    RuleClinicalThinkingPattern,
     ThinkingPattern,
 )
 
@@ -19,8 +21,10 @@ class ThinkingPatternFactory:
         self._builders: dict[str, Callable[[], ThinkingPattern]] = {
             "rule_based": RuleBasedThinkingPattern,
             "rule_based_strict": RuleBasedStrictThinkingPattern,
+            "rule_clinical": RuleClinicalThinkingPattern,
             "bayesian": BayesianThinkingPattern,
             "deep_learning": lambda: DeepLearningThinkingPattern(epochs=deep_learning_epochs, batch_size=deep_learning_batch_size, lr=deep_learning_lr),
+            "deep_learning_mc": lambda: MCDropoutThinkingPattern(DeepLearningThinkingPattern(epochs=deep_learning_epochs, batch_size=deep_learning_batch_size, lr=deep_learning_lr)),
             "logistic": LogisticThinkingPattern,
         }
 

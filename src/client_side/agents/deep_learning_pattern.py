@@ -98,3 +98,26 @@ class DeepLearningThinkingPattern(ThinkingPattern):
             logits = self.model(xt)
             probs = torch.sigmoid(logits).cpu().numpy().reshape(-1)
         return np.clip(probs, 0.0, 1.0)
+
+    def predict_uncertainty(self, x: np.ndarray, n_samples: int = 25) -> np.ndarray:
+        if self.model is None:
+            raise RuntimeError("DeepLearningThinkingPattern must be fitted before prediction.")
+
+        # Monte Carlo Dropout: evaluate model in training mode multiple times.
+        self.model.train()
+        x_scaled = self.scaler.transform(x).astype(np.float32)
+        xt = torch.from_numpy(x_scaled).to(self.device)
+
+        preds = []
+        for _ in range(max(1, n_samples)):
+            logits = self.model(xt)
+            probs = torch.sigmoid(logits).cpu().numpy().reshape(-1)
+            preds.append(probs)
+
+        preds = np.stack(preds, axis=0)
+        uncertainty = preds.std(axis=0)
+        uncertainty = np.clip(uncertainty, 0.0, 1.0)
+
+        # return low certainty for stable predictions on deterministic model
+        self.model.eval()
+        return uncertainty

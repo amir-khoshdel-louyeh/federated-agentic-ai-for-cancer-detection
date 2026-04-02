@@ -28,6 +28,12 @@ class ThinkingPattern(ABC):
 	def predict_proba(self, x: np.ndarray) -> np.ndarray:
 		"""Return positive-class probabilities in shape (n_samples,)."""
 
+	def predict_uncertainty(self, x: np.ndarray, n_samples: int = 25) -> np.ndarray:
+		"""Return per-sample uncertainty score (0..1)."""
+		# Default: deterministic patterns emit constant low uncertainty.
+		probs = self.predict_proba(x)
+		return np.full_like(probs, 0.05, dtype=np.float32)
+
 
 class SkinCancerAgent(ABC):
 	"""

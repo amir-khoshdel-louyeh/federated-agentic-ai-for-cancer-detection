@@ -22,6 +22,7 @@ from .agent_portfolio import AgentPortfolio
 from .data_pipeline import LocalDataPipeline, LocalHospitalData
 from .hospital_env import VirtualHospital
 from .output_schema import build_hospital_output
+from .meta_manager import MetaManager
 from .pattern_factory import ThinkingPatternFactory, create_thinking_pattern
 from .pattern_policy import StaticPatternPolicy
 
@@ -258,11 +259,22 @@ class HospitalNode(HospitalLifecycleContract):
 
         candidate_comparisons = self._build_candidate_comparisons(val_metrics)
 
+        # Meta-manager conflict resolution / hardening from specialist outputs.
+        meta_manager = MetaManager(soft_vote_temperature=self.config.get("meta_agent", {}).get("local", {}).get("soft_vote_temperature", 1.0))
+        cancer_predictions = {ct: selected_performance[ct]["test"]["auc"] if ct in selected_performance else np.zeros_like(self.scope.data.x_test[:,0]) for ct in selected_patterns}
+        # Use predictions arrays and uncertainties based on AUC distance (proxy) with 0 fallback
+        predictions = {ct: np.full(self.scope.data.x_test.shape[0], selected_performance[ct]["test"]["accuracy"] if ct in selected_performance else 0.0) for ct in selected_patterns}
+        uncertainties = {ct: np.full(self.scope.data.x_test.shape[0], 1.0 - selected_performance[ct]["test"]["auc"] if ct in selected_performance else 1.0) for ct in selected_patterns}
+
+        # Meta information can be used for aggregated decision support.
+        meta_result = meta_manager.combine(predictions, uncertainties)
+
         self.metrics_store["evaluation"] = {
             "validation": val_metrics,
             "test": test_metrics,
             "selected_performance": selected_performance,
             "candidate_pattern_comparisons": candidate_comparisons,
+            "meta_manager": meta_result,
         }
         self.scope.report_output = {
             "hospital_id": self.hospital_id,

@@ -11,10 +11,19 @@ out_dir: outputs
 # # DATA SPLIT & SAMPLING
 # # ========================
 data_split:
-  train: 0.8
-  validation: 0.1
-  test: 0.1
+  holdout_test: 0.1  # final held-out test set
+  k_folds: 5
+  current_fold: 0  # 0..k_folds-1 for cross-validation rounds (0 means first fold)
   stratify: true  # use stratified split on malignancy label (target) to preserve class ratio
+  mode: tabular  # options: tabular, image, combined
+
+augmentation:
+  enabled: true
+  rotation_prob: 0.15
+  flip_prob: 0.15
+  color_jitter_strength: 0.1
+  hair_removal_strength: 0.05
+  num_augmented_copies: 0  # 0 means no additional synthetic copies beyond original
 
 sampling:
   total_samples: 1000  # Increased from 100 for better class coverage
@@ -115,8 +124,8 @@ training:
 simulation:
   simulate_multi: true
   compare_all: true
-  num_rounds: 500
-  num_epoch: 3
+  num_rounds: 2
+  num_epoch: 2
 # # ========================
 # # OUTPUT CONTROL
 # # ========================
