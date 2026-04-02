@@ -7,6 +7,7 @@ from ..agents import (
     DeepLearningThinkingPattern,
     LogisticThinkingPattern,
     MCDropoutThinkingPattern,
+    PretrainedLibraryThinkingPattern,
     RuleBasedStrictThinkingPattern,
     RuleBasedThinkingPattern,
     RuleClinicalThinkingPattern,
