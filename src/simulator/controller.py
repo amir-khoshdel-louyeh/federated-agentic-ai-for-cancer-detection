@@ -1,6 +1,7 @@
 from configs.config_loader import load_config
 from pathlib import Path
 import logging
+import sys
 from src.client_side.hospital.agent_portfolio import AgentPortfolio
 from src.client_side.hospital.hospital_node import HospitalNode
 from src.client_side.hospital.data_pipeline import LocalDataPipeline
@@ -48,11 +49,24 @@ def make_hospitals(config, data_pipeline):
 def initialize_system(config):
     """Initialize config, output dirs, logging, data pipeline, and hospitals."""
     ensure_output_dirs(config)
-    logging.basicConfig(
-        filename=Path(config.get("tracking", {}).get("log_dir", "outputs/logs")) / config.get("tracking", {}).get("log_file_name", "simulation.log"),
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s"
-    )
+    log_dir = Path(config.get("tracking", {}).get("log_dir", "outputs/logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / config.get("tracking", {}).get("log_file_name", "simulation.log")
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    # Clear existing handlers (avoid duplicates in repeated init calls)
+    if root_logger.handlers:
+        root_logger.handlers = []
+
+    file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stream_handler)
+
     data_pipeline = LocalDataPipeline()
     hospitals = make_hospitals(config, data_pipeline)
     allocate_data(hospitals)

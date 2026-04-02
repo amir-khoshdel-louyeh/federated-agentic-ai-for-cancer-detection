@@ -1,4 +1,5 @@
 import argparse
+import logging
 from pathlib import Path
 
 from configs.config_loader import load_config
@@ -42,10 +43,11 @@ def main():
 
 	# Step 2: Initialize system
 	hospitals = initialize_system(config)
+	logging.info("CLI: System initialized, starting simulation.")
 
 
 	# Print split sizes for each hospital
-	print("\n=== Data Split Sizes Per Hospital ===")
+	logging.info("=== Data Split Sizes Per Hospital ===")
 	all_test_ids = {}
 	for hid, hospital in hospitals.items():
 		split_sizes = hospital.metrics_store.get("split_sizes", {})
@@ -62,7 +64,7 @@ def main():
 	log_dir = config.get("tracking", {}).get("log_dir", config.get("out_dir", "outputs") + "/logs")
 	log_file = config.get("tracking", {}).get("log_file_name", "simulation.log")
 	log_path = Path(log_dir) / log_file
-	print(f"Using log file: {log_path.resolve()}")
+	logging.info(f"Using log file: {log_path.resolve()}")
 
 	# Check uniqueness of test_ids between hospitals
 	is_unique = True
@@ -73,20 +75,20 @@ def main():
 				if set(all_ids[i]) & set(all_ids[j]):
 					is_unique = False
 	if all_test_ids:
-		print(f"Data between hospitals is {'UNIQUE' if is_unique else 'NOT UNIQUE'} (based on test_ids).\n")
+		logging.info(f"Data between hospitals is {'UNIQUE' if is_unique else 'NOT UNIQUE'} (based on test_ids).\n")
 
 	# choose k-fold vs single pipeline
 	k_folds = int(config.get("data_split", {}).get("k_folds", 1))
 	if k_folds > 1:
 		from src.simulator.k_fold_runner import run_k_fold_experiment
-		print(f"Running k-fold cross-validation: {k_folds} folds")
+		logging.info(f"Running k-fold cross-validation: {k_folds} folds")
 		run_k_fold_experiment(config)
 	else:
-		print("Starting federated training...")
+		logging.info("Starting federated training...")
 		train_system(config, hospitals)
-		print("Training complete.")
+		logging.info("Training complete.")
 		validation_system(hospitals)
-		print("Running evaluation on test data...")
+		logging.info("Running evaluation on test data...")
 		results = test_system(hospitals)
 		show_results(results)
 		show_log_location(config)
