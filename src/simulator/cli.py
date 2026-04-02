@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
 
-from networkx import config
 from configs.config_loader import load_config
 from src.simulator.controller import (
 	initialize_system,
