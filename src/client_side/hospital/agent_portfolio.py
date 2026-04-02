@@ -83,6 +83,62 @@ class AgentPortfolio:
             report[prediction_key] = self._eval_probs(y_true, probs)
         return report
 
+    def get_model_weights(self) -> dict[str, dict]:
+        weights = {}
+        for cancer_type, agent in self._agents.items():
+            pattern = getattr(agent, '_thinking_pattern', None)
+            model_obj = getattr(pattern, 'model', None)
+            weights[cancer_type] = None
+
+            if model_obj is None:
+                continue
+
+            if hasattr(model_obj, 'state_dict'):
+                # PyTorch model
+                weights[cancer_type] = {
+                    'framework': 'torch',
+                    'state_dict': model_obj.state_dict(),
+                }
+                continue
+
+            # Handle scikit-learn linear models (LogisticRegression)
+            if hasattr(model_obj, 'coef_') and hasattr(model_obj, 'intercept_'):
+                weights[cancer_type] = {
+                    'framework': 'sklearn',
+                    'coef': model_obj.coef_.copy(),
+                    'intercept': model_obj.intercept_.copy(),
+                    'classes': getattr(model_obj, 'classes_', np.array([0, 1])),
+                    'n_features_in': getattr(model_obj, 'n_features_in_', model_obj.coef_.shape[1]),
+                }
+                continue
+
+        return weights
+
+    def set_model_weights(self, weights: dict[str, dict]):
+        for cancer_type, state in weights.items():
+            if not state:
+                continue
+
+            agent = self.get_agent(cancer_type)
+            pattern = getattr(agent, '_thinking_pattern', None)
+            model_obj = getattr(pattern, 'model', None)
+            if model_obj is None:
+                continue
+
+            framework = state.get('framework') if isinstance(state, dict) else None
+            try:
+                if framework == 'torch' and hasattr(model_obj, 'load_state_dict'):
+                    model_obj.load_state_dict(state['state_dict'])
+                elif framework == 'sklearn' and hasattr(model_obj, 'coef_'):
+                    model_obj.coef_ = state['coef']
+                    model_obj.intercept_ = state['intercept']
+                    model_obj.classes_ = state.get('classes', np.array([0, 1]))
+                    model_obj.n_features_in_ = state.get('n_features_in', state['coef'].shape[1])
+                elif hasattr(model_obj, 'load_state_dict') and isinstance(state, dict):
+                    model_obj.load_state_dict(state)
+            except Exception:
+                continue
+
     @staticmethod
     def _normalize_cancer_type(cancer_type: str) -> str:
         key = cancer_type.strip().upper()

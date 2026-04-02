@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+import numpy as np
+import torch
+
 from .contracts import AggregationOutput, BinaryMetrics, LocalHospitalUpdatePayload
 from .weighting import (
     build_adaptive_weights,
@@ -160,6 +163,100 @@ class FedProxAggregator:
                 "mu": float(self.mu),
                 "raw_current_global_metrics": current_global_metrics,
                 "used_previous_global": previous_metrics is not None,
+            },
+        )
+
+
+@dataclass(frozen=True)
+class FederatedPerAgentAggregator:
+    """Federated per-agent model weight aggregator (for model parameter consolidation)."""
+
+    @property
+    def name(self) -> str:
+        return "fedavg_per_agent"
+
+    def aggregate(
+        self,
+        *,
+        round_index: int,
+        local_updates: Mapping[str, LocalHospitalUpdatePayload],
+        previous_global_state: Mapping[str, Any] | None = None,
+    ) -> AggregationOutput:
+        del previous_global_state
+
+        if not local_updates:
+            raise ValueError("FederatedPerAgentAggregator requires at least one local update.")
+
+        # combine metrics with existing fedavg logic
+        hospital_weights = normalize_sample_size_weights(local_updates, split_key="train")
+        per_hospital_metrics = {
+            hospital_id: _compute_hospital_metric_mean(payload)
+            for hospital_id, payload in local_updates.items()
+        }
+        global_metrics = _weighted_metric_mean(
+            per_hospital_metrics=per_hospital_metrics,
+            hospital_weights=hospital_weights,
+        )
+
+        # if model weights available, average per agent key across hospitals
+        model_weights = {}
+        weight_keys = None
+        for payload in local_updates.values():
+            mw = payload.get("model_weights")
+            if mw is not None:
+                weight_keys = mw.keys()
+                break
+
+        if weight_keys is not None:
+            for agent_key in weight_keys:
+                collected = [payload.get("model_weights", {}).get(agent_key) for payload in local_updates.values() if payload.get("model_weights", {}).get(agent_key) is not None]
+                if not collected:
+                    continue
+
+                # If the payload is a wrapped framework dict
+                first = collected[0]
+                if isinstance(first, dict) and first.get("framework") == "torch":
+                    avg_state = {}
+                    for k in first["state_dict"].keys():
+                        tensor_list = []
+                        for w in collected:
+                            val = w["state_dict"].get(k)
+                            if isinstance(val, torch.Tensor):
+                                tensor_list.append(val.float())
+                            elif isinstance(val, np.ndarray):
+                                tensor_list.append(torch.from_numpy(val).float())
+                            else:
+                                tensor_list.append(torch.tensor(float(val)))
+                        stacked = torch.stack(tensor_list, dim=0)
+                        avg_state[k] = stacked.mean(dim=0)
+                    model_weights[agent_key] = {"framework": "torch", "state_dict": avg_state}
+                elif isinstance(first, dict) and first.get("framework") == "sklearn":
+                    # average coef and intercept for logistic models
+                    coef_list = [torch.from_numpy(w["coef"]).float() if isinstance(w["coef"], np.ndarray) else torch.tensor(w["coef"]) for w in collected]
+                    intercept_list = [torch.from_numpy(w["intercept"]).float() if isinstance(w["intercept"], np.ndarray) else torch.tensor(w["intercept"]) for w in collected]
+                    avg_coef = torch.stack(coef_list, dim=0).mean(dim=0).numpy()
+                    avg_intercept = torch.stack(intercept_list, dim=0).mean(dim=0).numpy()
+                    model_weights[agent_key] = {
+                        "framework": "sklearn",
+                        "coef": avg_coef,
+                        "intercept": avg_intercept,
+                        "classes": first.get("classes", np.array([0, 1])),
+                        "n_features_in": first.get("n_features_in", coef_list[0].shape[1] if coef_list else 0),
+                    }
+                else:
+                    # fall back to pass-through for heterogeneous or unsupported representation
+                    model_weights[agent_key] = first
+
+        return AggregationOutput(
+            algorithm=self.name,
+            round_index=round_index,
+            global_metrics=global_metrics,
+            hospital_weights=dict(hospital_weights),
+            included_hospital_ids=tuple(local_updates.keys()),
+            details={
+                "weight_source": "model-weights-federated-avg",
+                "num_hospitals": len(local_updates),
+                "model_weights_aggregated": bool(model_weights),
             },
         )
 
