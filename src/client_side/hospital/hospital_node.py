@@ -11,6 +11,7 @@ from sklearn.exceptions import UndefinedMetricWarning
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 from ..agents import SkinCancerAgent
+from sklearn.utils import resample
 
 from .contracts import (
     AdaptivePatternPolicyContract,
@@ -147,6 +148,34 @@ class HospitalNode(HospitalLifecycleContract):
                     "used malignant binary labels fallback."
                 )
 
+            # Address heavy class imbalance with within-hospital minority oversampling
+            counts = np.bincount(y_train, minlength=2)
+            if counts.min() > 0:
+                imbalance_threshold = self.config.get('training', {}).get('imbalance_ratio_threshold', 10) if self.config else 10
+                ratio = max(counts) / max(1, min(counts))
+                if ratio > imbalance_threshold:
+                    majority_label = int(np.argmax(counts))
+                    minority_label = 1 - majority_label
+                    x_majority = x_train[y_train == majority_label]
+                    y_majority = y_train[y_train == majority_label]
+                    x_minority = x_train[y_train == minority_label]
+                    y_minority = y_train[y_train == minority_label]
+                    x_minority_up, y_minority_up = resample(
+                        x_minority,
+                        y_minority,
+                        replace=True,
+                        n_samples=x_majority.shape[0],
+                        random_state=self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42,
+                    )
+                    x_train = np.vstack([x_majority, x_minority_up])
+                    y_train = np.concatenate([y_majority, y_minority_up])
+                    perm = np.random.default_rng(self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42).permutation(x_train.shape[0])
+                    x_train = x_train[perm]
+                    y_train = y_train[perm]
+                    training_warnings[cancer_type] = (
+                        training_warnings.get(cancer_type, "") + " Class imbalance oversampled minority class."
+                    ).strip()
+
             agent.fit(x_train, y_train)
             val_probs = agent.predict_proba(x_val)
             test_probs = agent.predict_proba(x_test)
@@ -173,78 +202,6 @@ class HospitalNode(HospitalLifecycleContract):
         self.metrics_store.setdefault("evaluation", {})["test"] = per_agent_metrics
         print(f"[DEBUG] Hospital {self.hospital_id} per_agent_metrics: {per_agent_metrics}")
         self.metrics_store["lifecycle_state"] = "trained"
-
-    def apply_adaptive_pattern_policy(
-        self,
-        validation_scores: dict[str, dict[str, float]],
-    ) -> dict[str, str]:
-        """Apply policy-driven pattern replacements after validation comparison."""
-        if self.scope.agent_portfolio is None:
-            raise RuntimeError("HospitalNode requires an agent portfolio before adaptive policy application.")
-        if self.scope.pattern_policy is None:
-            return self.scope.agent_portfolio.selected_patterns()
-
-        policy = self.scope.pattern_policy
-        if not isinstance(policy, AdaptivePatternPolicyContract):
-            return self.scope.agent_portfolio.selected_patterns()
-
-        current_patterns = self.scope.agent_portfolio.selected_patterns()
-        updated_patterns = policy.adapt_patterns(current_patterns, validation_scores)
-
-        for cancer_type, pattern_name in updated_patterns.items():
-            if current_patterns.get(cancer_type) == pattern_name:
-                @staticmethod
-                def _compute_binary_metrics(y_true: np.ndarray, probs: np.ndarray) -> dict[str, float]:
-                    preds = (probs >= 0.5).astype(int)
-                    accuracy = float(accuracy_score(y_true, preds))
-                    f1 = float(f1_score(y_true, preds, zero_division=0))
-                    try:
-                        auc = roc_auc_score(y_true, probs)
-                    except ValueError:
-                        auc = 0.5
-
-                    # Ensure auc is finite
-                    if not np.isfinite(auc):
-                        auc = 0.0
-
-                    # labels=[0, 1] guarantees stable unpacking for degenerate splits.
-                    tn, fp, fn, tp = confusion_matrix(y_true, preds, labels=[0, 1]).ravel()
-                    sensitivity = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
-                    specificity = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
-
-                    try:
-                        logloss = log_loss(y_true, probs, labels=[0, 1])
-                    except ValueError:
-                        logloss = 1.0
-
-                    # PR-AUC from precision-recall curve
-                    try:
-                        pr_precision, pr_recall, _ = precision_recall_curve(y_true, probs, pos_label=1)
-                        pr_auc = float(auc(pr_recall, pr_precision))
-                    except ValueError:
-                        pr_auc = 0.0
-
-                    precision_val = precision_score(y_true, preds, zero_division=0)
-                    recall_val = recall_score(y_true, preds, zero_division=0)
-
-                    metrics = {
-                        "accuracy": float(accuracy),
-                        "f1": float(f1),
-                        "auc": float(auc) if np.isfinite(auc) else 0.0,
-                        "pr_auc": float(pr_auc),
-                        "precision": float(precision_val),
-                        "recall": float(recall_val),
-                        "log_loss": float(logloss),
-                        "sensitivity": float(sensitivity),
-                        "specificity": float(specificity),
-                    }
-                    # Ensure all metrics are float and finite
-                    for k, v in metrics.items():
-                        if not np.isfinite(v):
-                            metrics[k] = 0.0
-                        else:
-                            metrics[k] = float(v)
-                    return metrics
 
     def evaluate(self) -> dict[str, Any]:
         """Evaluate all fixed cancer agents and store metrics for validation and test splits."""
@@ -281,7 +238,6 @@ class HospitalNode(HospitalLifecycleContract):
 
         # Meta-manager conflict resolution / hardening from specialist outputs.
         meta_manager = MetaManager(soft_vote_temperature=self.config.get("meta_agent", {}).get("local", {}).get("soft_vote_temperature", 1.0))
-        cancer_predictions = {ct: selected_performance[ct]["test"]["auc"] if ct in selected_performance else np.zeros_like(self.scope.data.x_test[:,0]) for ct in selected_patterns}
         # Use predictions arrays and uncertainties based on AUC distance (proxy) with 0 fallback
         predictions = {ct: np.full(self.scope.data.x_test.shape[0], selected_performance[ct]["test"]["accuracy"] if ct in selected_performance else 0.0) for ct in selected_patterns}
         uncertainties = {ct: np.full(self.scope.data.x_test.shape[0], 1.0 - selected_performance[ct]["test"]["auc"] if ct in selected_performance else 1.0) for ct in selected_patterns}
@@ -307,6 +263,32 @@ class HospitalNode(HospitalLifecycleContract):
 
     @staticmethod
     def _compute_binary_metrics(y_true: np.ndarray, probs) -> dict[str, float]:
+        # Handle degenerate class splits before calling sklearn metrics to avoid lots of warnings
+        if np.unique(y_true).size < 2:
+            if np.unique(y_true)[0] == 1:
+                return {
+                    "accuracy": 1.0,
+                    "f1": 0.0,
+                    "auc": 0.5,
+                    "pr_auc": 0.0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "log_loss": 0.0,
+                    "sensitivity": 1.0,
+                    "specificity": 0.0,
+                }
+            return {
+                "accuracy": 1.0,
+                "f1": 0.0,
+                "auc": 0.5,
+                "pr_auc": 0.0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "log_loss": 0.0,
+                "sensitivity": 0.0,
+                "specificity": 1.0,
+            }
+
         # Ensure `probs` is numpy-compatible for comparisons (list-backed outputs may occur)
         probs_arr = np.asarray(probs, dtype=np.float32)
         preds = (probs_arr >= 0.5).astype(int)
@@ -481,16 +463,6 @@ class HospitalNode(HospitalLifecycleContract):
                 self.metrics_store["model_weights_synced"] = True
             except Exception:
                 self.metrics_store["model_weights_synced"] = False
-
-    def get_metadata_for_aggregation(self) -> dict[str, Any]:
-        """Return compact metadata for federated aggregator-side decisions."""
-        return {
-            "hospital_id": self.hospital_id,
-            "split_sizes": dict(self.metrics_store.get("split_sizes", {})),
-            "selected_patterns": dict(self.metrics_store.get("selected_patterns", {})),
-            "lifecycle_state": str(self.metrics_store.get("lifecycle_state", "created")),
-            "schema_version": str(self.scope.report_output.get("schema_version", "1.0.0")),
-        }
 
     # Note: `evaluate()` is already implemented earlier in this class (line ~235).
     # The duplicate implementation was intentionally removed to avoid method override confusion and enforce a single evaluation contract.

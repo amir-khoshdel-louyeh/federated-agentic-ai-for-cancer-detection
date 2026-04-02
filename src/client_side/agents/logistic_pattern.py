@@ -17,22 +17,25 @@ class LogisticThinkingPattern(ThinkingPattern):
         self,
         C: float = 1.0,
         penalty: str = "l2",
+        class_weight: str | dict | None = "balanced",
         max_iter: int = 1000,
         random_state: int = 42,
         pretrained_path: str | None = None,
     ) -> None:
         self.C = C
         self.penalty = penalty
+        self.class_weight = class_weight
         self.max_iter = max_iter
         self.random_state = random_state
         self.scaler = StandardScaler()
         self.model = LogisticRegression(
             C=self.C,
             penalty=self.penalty,
+            class_weight=self.class_weight,
             solver="lbfgs",
             max_iter=self.max_iter,
             random_state=self.random_state,
-)
+        )
         self._is_fitted = False
 
         if pretrained_path is not None:

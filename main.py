@@ -100,6 +100,14 @@ privacy:
   secure_aggregation: true
 
 # # ========================
+# # PREPROCESSING
+# # ========================
+preprocessing:
+  enabled: true
+  scale: true
+  lesion_split: false
+
+# # ========================
 
 # # TRACKING & LOGGING
 # # ========================
@@ -111,6 +119,12 @@ tracking:
   save_logs: true
   log_dir: outputs/logs
   log_file_name: simulation.log
+
+# # ========================
+# # TRAINING
+# # ========================
+training:
+  imbalance_ratio_threshold: 10  # max majority/minority ratio allowed before oversampling
 
 # # ========================
 # # EXPERIMENT CONTROL
