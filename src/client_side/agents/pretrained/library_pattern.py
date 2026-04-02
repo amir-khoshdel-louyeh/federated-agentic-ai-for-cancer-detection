@@ -20,6 +20,7 @@ class PretrainedLibraryThinkingPattern(ThinkingPattern):
         max_iter: int = 200,
         learning_rate: float = 0.1,
         max_depth: int = 6,
+        class_weight: str | dict | None = "balanced",
         random_state: int = 42,
     ) -> None:
         self.scaler = StandardScaler()
@@ -27,6 +28,7 @@ class PretrainedLibraryThinkingPattern(ThinkingPattern):
             max_iter=max_iter,
             learning_rate=learning_rate,
             max_leaf_nodes=2 ** max_depth,
+            class_weight=class_weight,
             random_state=random_state,
         )
         self._is_fitted = False

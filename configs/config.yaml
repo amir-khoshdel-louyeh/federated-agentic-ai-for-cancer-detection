@@ -121,12 +121,17 @@ tracking:
 # # ========================
 training:
   max_local_samples: 500  # cap per-cancer local training samples to keep speed stable with big datasets
+  rebalance_method: smote  # options: smote, oversample
+  imbalance_ratio_threshold: 5
+  decision_threshold: 0.4  # evaluate predictions with threshold for binary classification
 
 simulation:
   simulate_multi: true
   compare_all: true
   num_rounds: 2
   num_epoch: 2
+  early_stop_metric: log_loss
+  early_stop_patience: 3
   # Additional low-test values for quick library-agent proof-of-concept
   batch_size: 64
   early_stop_metric: auc
