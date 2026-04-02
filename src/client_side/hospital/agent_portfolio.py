@@ -129,7 +129,7 @@ class AgentPortfolio:
             try:
                 if framework == 'torch' and hasattr(model_obj, 'load_state_dict'):
                     model_obj.load_state_dict(state['state_dict'])
-                elif framework == 'sklearn' and hasattr(model_obj, 'coef_'):
+                elif framework == 'sklearn':
                     model_obj.coef_ = state['coef']
                     model_obj.intercept_ = state['intercept']
                     model_obj.classes_ = state.get('classes', np.array([0, 1]))

@@ -85,6 +85,7 @@ class AggregationOutput:
     included_hospital_ids: tuple[str, ...]
     dropped_hospitals: dict[str, str] = field(default_factory=dict)
     details: dict[str, Any] = field(default_factory=dict)
+    model_weights: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

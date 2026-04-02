@@ -258,6 +258,7 @@ class FederatedPerAgentAggregator:
                 "num_hospitals": len(local_updates),
                 "model_weights_aggregated": bool(model_weights),
             },
+            model_weights=model_weights or None,
         )
 
 

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from .aggregators import AdaptiveAggregator, FedAvgAggregator, FedProxAggregator, NoOperationAggregator
+from .aggregators import AdaptiveAggregator, FedAvgAggregator, FedProxAggregator, FederatedPerAgentAggregator, NoOperationAggregator
 from .contracts import AggregatorContract
 
 _SUPPORTED_BUILDERS: dict[str, Callable[..., AggregatorContract]] = {
     "fedavg": FedAvgAggregator,
     "fedprox": FedProxAggregator,
+    "fedavg_per_agent": FederatedPerAgentAggregator,
     "adaptive": AdaptiveAggregator,
     "no_operation": NoOperationAggregator,
 }

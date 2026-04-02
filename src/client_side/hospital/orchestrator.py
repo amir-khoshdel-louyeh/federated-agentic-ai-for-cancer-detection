@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 from src.server_side.federated_learning.contracts import (
 	AggregatorContract,
@@ -145,18 +145,85 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 
 		return outputs
 
-	def broadcast_global_state(
+	def run_with_early_stopping(
 		self,
+		*,
 		hospitals: Mapping[str, HospitalFederatedClient],
-		global_state: Mapping[str, Any],
-	) -> None:
-		"""Broadcast global state to all participating hospitals."""
-		for hospital in hospitals.values():
-			hospital.apply_global_update(global_state)
+		num_epochs: int,
+		num_rounds: int,
+		validation_fn: Callable[[Mapping[str, HospitalFederatedClient]], dict[str, Any]],
+		monitor_metric: str = "f1",
+		patience: int = 2,
+		min_delta: float = 1e-4,
+	) -> dict[str, Any]:
+		"""Run training rounds with early stopping based on validation metric.
 
-	def get_round_history(self) -> list[OrchestratorRoundOutput]:
-		"""Return a copy of the in-memory round history."""
-		return list(self.round_history)
+		validation_fn returns a dict with keys:
+		- 'validation_reports': per-hospital validation metrics
+		- 'should_stop': optional hack flag
+		"""
+		if num_epochs < 1 or num_rounds < 1:
+			raise ValueError("num_epochs and num_rounds must be positive integers")
+
+		if monitor_metric not in {"f1", "auc"}:
+			raise ValueError("monitor_metric must be 'f1' or 'auc'")
+
+		best_metric = float("-inf")
+		best_epoch = 0
+		stale = 0
+		history = []
+
+		for epoch in range(1, num_epochs + 1):
+			for round_idx in range(1, num_rounds + 1):
+				current_round = (epoch - 1) * num_rounds + round_idx
+				# Train hospitals before collecting an update for this round.
+				for hospital in hospitals.values():
+					hospital.train()
+				local_updates = self.collect_local_updates(hospitals)
+				round_output = self.run_round(
+					round_index=current_round,
+					local_updates=local_updates,
+					previous_global_state=self.current_global_state,
+				)
+				self.broadcast_global_state(hospitals, round_output.global_state)
+				history.append(round_output)
+
+			validation_result = validation_fn(hospitals)
+			validation_reports = validation_result.get("validation_reports") if isinstance(validation_result, dict) else {}
+			should_stop = bool(validation_result.get("should_stop", False)) if isinstance(validation_result, dict) else False
+
+			# compute average metric over all hospitals and cancer agents
+			values = []
+			for hid, hospital_report in (validation_reports or {}).items():
+				for cancer_result in hospital_report.values():
+					m = cancer_result.get("metrics", {}).get(monitor_metric)
+					if m is not None:
+						values.append(float(m))
+
+			avg_metric = float(sum(values) / len(values)) if values else 0.0
+			if avg_metric > best_metric + min_delta:
+				best_metric = avg_metric
+				best_epoch = epoch
+				stale = 0
+			else:
+				stale += 1
+
+			if should_stop or (patience > 0 and stale >= patience):
+				return {
+					"rounds": history,
+					"best_epoch": best_epoch,
+					"best_metric": best_metric,
+					"stopped_early": True,
+					"validation_reports": validation_reports,
+				}
+
+		return {
+			"rounds": history,
+			"best_epoch": best_epoch,
+			"best_metric": best_metric,
+			"stopped_early": False,
+			"validation_reports": validation_reports,
+		}
 
 	@staticmethod
 	def _build_global_state(
@@ -176,9 +243,23 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 			"included_hospital_ids": list(aggregation.included_hospital_ids),
 			"dropped_hospitals": dict(aggregation.dropped_hospitals),
 			"aggregation_details": dict(aggregation.details),
+			"model_weights": aggregation.model_weights,
 			"validation": {
 				"count": validation.count,
 				"validated_hospitals": list(validation.validated_hospitals),
 			},
 			"previous_global_state_available": previous_global_state is not None,
 		}
+
+	def broadcast_global_state(
+		self,
+		hospitals: Mapping[str, HospitalFederatedClient],
+		global_state: Mapping[str, Any],
+	) -> None:
+		"""Broadcast global state to all participating hospitals."""
+		for hospital in hospitals.values():
+			hospital.apply_global_update(global_state)
+
+	def get_round_history(self) -> list[OrchestratorRoundOutput]:
+		"""Return a copy of the in-memory round history."""
+		return list(self.round_history)

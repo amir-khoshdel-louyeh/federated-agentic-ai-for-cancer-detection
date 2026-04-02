@@ -41,9 +41,10 @@ def build_hospital_output(
         },
         "local_summary": local_summary,
         "model_update_metadata": {
-            "update_format": "hospital-local-metrics-only",
+            "update_format": "hospital-local-metrics-with-weights",
             "has_model_weights": False,
         },
+        "model_weights": None,
     }
     return output
 

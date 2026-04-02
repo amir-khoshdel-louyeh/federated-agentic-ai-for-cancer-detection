@@ -405,6 +405,14 @@ class HospitalNode(HospitalLifecycleContract):
                 "random_seed": int(self.metrics_store.get("random_seed", 0)),
             },
         )
+
+        if hasattr(self.scope.agent_portfolio, "get_model_weights"):
+            model_weights = self.scope.agent_portfolio.get_model_weights()
+            output["model_weights"] = model_weights
+            output["model_update_metadata"] = {
+                "update_format": "hospital-local-metrics-with-weights",
+                "has_model_weights": True,
+            }
         # Debug print for metrics.per_agent
         per_agent_metrics = output.get("metrics", {}).get("per_agent", {})
         print(f"[DEBUG] Hospital {self.hospital_id} metrics.per_agent: {per_agent_metrics}")
@@ -421,9 +429,18 @@ class HospitalNode(HospitalLifecycleContract):
         return local_update
 
     def apply_global_update(self, global_state: Mapping[str, Any]) -> None:
-        """Store incoming global state stub until model parameter sync is introduced."""
+        """Apply incoming global state or model update to local hospital."""
         self.metrics_store["last_global_state"] = dict(global_state)
         self.metrics_store["global_update_applied"] = True
+
+        # Attempt model weights sync if available
+        model_weights = global_state.get("model_weights") if isinstance(global_state, dict) else None
+        if model_weights and self.scope.agent_portfolio is not None and hasattr(self.scope.agent_portfolio, "set_model_weights"):
+            try:
+                self.scope.agent_portfolio.set_model_weights(model_weights)
+                self.metrics_store["model_weights_synced"] = True
+            except Exception:
+                self.metrics_store["model_weights_synced"] = False
 
     def get_metadata_for_aggregation(self) -> dict[str, Any]:
         """Return compact metadata for federated aggregator-side decisions."""
