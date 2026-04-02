@@ -66,11 +66,12 @@ agents:
       - bayesian
       - deep_learning
       - logistic
+      - pretrained_library
     default_mapping:
-      BCC: logistic
-      SCC: logistic
-      MELANOMA: deep_learning
-      AKIEC: bayesian
+      BCC: pretrained_library
+      SCC: pretrained_library
+      MELANOMA: pretrained_library
+      AKIEC: pretrained_library
     allow_dynamic_switch: true
 
 # # FINALIZER AGENT CONFIGURATION
@@ -126,6 +127,10 @@ simulation:
   compare_all: true
   num_rounds: 2
   num_epoch: 2
+  # Additional low-test values for quick library-agent proof-of-concept
+  batch_size: 64
+  early_stop_metric: auc
+  early_stop_patience: 3
 # # ========================
 # # OUTPUT CONTROL
 # # ========================
