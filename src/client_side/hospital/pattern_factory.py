@@ -5,6 +5,7 @@ from collections.abc import Callable
 from ..agents import (
     BayesianThinkingPattern,
     DeepLearningThinkingPattern,
+    LogisticThinkingPattern,
     RuleBasedStrictThinkingPattern,
     RuleBasedThinkingPattern,
     ThinkingPattern,
@@ -20,6 +21,7 @@ class ThinkingPatternFactory:
             "rule_based_strict": RuleBasedStrictThinkingPattern,
             "bayesian": BayesianThinkingPattern,
             "deep_learning": lambda: DeepLearningThinkingPattern(epochs=deep_learning_epochs, batch_size=deep_learning_batch_size, lr=deep_learning_lr),
+            "logistic": LogisticThinkingPattern,
         }
 
     def create(self, name: str) -> ThinkingPattern:

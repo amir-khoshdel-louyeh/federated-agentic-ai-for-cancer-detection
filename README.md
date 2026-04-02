@@ -207,3 +207,14 @@ python -m src.hospital.main \
 
 - `outputs/metrics.json`: per-agent and ensemble metrics (accuracy, f1, auc, weights)
 - `outputs/predictions.csv`: test predictions and probabilities per agent
+## Pre-trained and high-quality agents
+
+This repository now includes `LogisticThinkingPattern` in `src/client_side/agents/logistic_pattern.py`.
+- Configure via `configs/config.yaml` under `agents.patterns.default_mapping` (e.g., `BCC: logistic`).
+- Save a trained model via `AgentPortfolio.save_all_models()`.
+- Load a pre-trained model via `ThinkingPattern.load_model()` (used from `LogisticThinkingPattern`).
+
+To use pre-trained weights in simulations:
+1. Train one hospital once with data and persist the model path.
+2. Set `pretrained_path` in your agent factory or pattern setup (future extension).
+3. Use `logistic` as a thinking pattern for stronger baseline performance.

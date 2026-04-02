@@ -423,45 +423,6 @@ class HospitalNode(HospitalLifecycleContract):
             "schema_version": str(self.scope.report_output.get("schema_version", "1.0.0")),
         }
 
-    def evaluate(self):
-        prediction_store = self.metrics_store.get("predictions", {})
-        val_predictions = prediction_store.get("val", {})
-        test_predictions = prediction_store.get("test", {})
-        if not test_predictions:
-            raise RuntimeError("Call train() before evaluate() to generate prediction artifacts.")
+    # Note: `evaluate()` is already implemented earlier in this class (line ~235).
+    # The duplicate implementation was intentionally removed to avoid method override confusion and enforce a single evaluation contract.
 
-        test_metrics = {
-            key: self._compute_binary_metrics(self.scope.data.y_test, probs)
-            for key, probs in test_predictions.items()
-        }
-        val_metrics = {
-            key: self._compute_binary_metrics(self.scope.data.y_val, probs)
-            for key, probs in val_predictions.items()
-        }
-
-        selected_patterns = self.metrics_store.get("selected_patterns", {})
-        selected_performance: dict[str, dict[str, Any]] = {}
-        for cancer_type, pattern_name in selected_patterns.items():
-            prediction_key = f"{cancer_type.lower()}::{pattern_name}"
-            selected_performance[cancer_type] = {
-                "pattern": pattern_name,
-                "validation": val_metrics.get(prediction_key, {}),
-                "test": test_metrics.get(prediction_key, {}),
-            }
-
-        candidate_comparisons = self._build_candidate_comparisons(val_metrics)
-
-        self.metrics_store["evaluation"] = {
-            "validation": val_metrics,
-            "test": test_metrics,
-            "selected_performance": selected_performance,
-            "candidate_pattern_comparisons": candidate_comparisons,
-        }
-        self.scope.report_output = {
-            "hospital_id": self.hospital_id,
-            "metrics": self.metrics_store["evaluation"],
-            "selected_patterns": self.metrics_store.get("selected_patterns", {}),
-        }
-        self.metrics_store["lifecycle_state"] = "evaluated"
-
-        return self.scope.report_output
