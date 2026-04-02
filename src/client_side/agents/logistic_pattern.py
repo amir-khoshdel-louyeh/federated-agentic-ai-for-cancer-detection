@@ -28,14 +28,26 @@ class LogisticThinkingPattern(ThinkingPattern):
         self.max_iter = max_iter
         self.random_state = random_state
         self.scaler = StandardScaler()
-        self.model = LogisticRegression(
-            C=self.C,
-            penalty=self.penalty,
-            class_weight=self.class_weight,
-            solver="lbfgs",
-            max_iter=self.max_iter,
-            random_state=self.random_state,
-        )
+
+        # Avoid deprecation from sklearn 1.8+ for explicit penalty='l2'
+        if self.penalty == "l2":
+            self.model = LogisticRegression(
+                C=self.C,
+                class_weight=self.class_weight,
+                solver="lbfgs",
+                max_iter=self.max_iter,
+                random_state=self.random_state,
+            )
+        else:
+            self.model = LogisticRegression(
+                C=self.C,
+                penalty=self.penalty,
+                class_weight=self.class_weight,
+                solver="lbfgs",
+                max_iter=self.max_iter,
+                random_state=self.random_state,
+            )
+
         self._is_fitted = False
 
         if pretrained_path is not None:

@@ -4,11 +4,14 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 
 import numpy as np
+import warnings
+from sklearn.exceptions import UndefinedMetricWarning, ConvergenceWarning
 from sklearn.metrics import (accuracy_score, auc, confusion_matrix, f1_score, log_loss,
                              precision_recall_curve, precision_score, recall_score, roc_auc_score)
-import warnings
-from sklearn.exceptions import UndefinedMetricWarning
+
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 from ..agents import SkinCancerAgent
 from sklearn.utils import resample
