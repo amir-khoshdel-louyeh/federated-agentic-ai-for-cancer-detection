@@ -66,22 +66,6 @@ class AgentPortfolio:
     def selected_patterns(self) -> dict[str, str]:
         return {cancer_type: agent.thinking_pattern_name for cancer_type, agent in self._agents.items()}
 
-    def train_all(self, x_train: np.ndarray, y_train: np.ndarray) -> None:
-        for cancer_type in CANCER_TYPES:
-            self._agents[cancer_type].fit(x_train, y_train)
-
-    def predict_all(self, x: np.ndarray) -> dict[str, np.ndarray]:
-        predictions: dict[str, np.ndarray] = {}
-        for cancer_type in CANCER_TYPES:
-            agent = self._agents[cancer_type]
-            predictions[agent.name] = agent.predict_proba(x)
-        return predictions
-
-    def evaluate_all(self, y_true: np.ndarray, predictions: Mapping[str, np.ndarray]) -> dict[str, dict[str, float]]:
-        report: dict[str, dict[str, float]] = {}
-        for prediction_key, probs in predictions.items():
-            report[prediction_key] = self._eval_probs(y_true, probs)
-        return report
 
     def get_model_weights(self) -> dict[str, dict]:
         weights = {}

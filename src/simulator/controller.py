@@ -262,104 +262,12 @@ def allocate_data(hospitals):
     for hospital in hospitals.values():
         hospital.initialize()
 
-def run_federated_learning(config, hospitals):
-    """Run the federated learning rounds."""
-    aggregation_name = config["federation"]["aggregation_algorithm"]
-    orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
-
-    num_epochs = int(config.get("simulation", {}).get("num_epoch", 1))
-    num_rounds = int(config.get("simulation", {}).get("num_rounds", 1))
-    if num_epochs < 1 or num_rounds < 1:
-        raise ValueError("simulation.num_epoch and simulation.num_rounds must both be positive integers.")
-
-    early_stop_threshold = config.get("simulation", {}).get("early_stop_threshold")
-    checkpoint_base = Path(config.get("output", {}).get("checkpoint_dir", "outputs/checkpoints"))
-    best_val_score = -1.0
-    best_epoch = None
-    should_stop = False
-
-    for epoch_idx in range(1, num_epochs + 1):
-        logging.info(f"Starting federated training epoch {epoch_idx}/{num_epochs}")
-        for round_idx in range(1, num_rounds + 1):
-            global_round_idx = (epoch_idx - 1) * num_rounds + round_idx
-
-            for hospital in hospitals.values():
-                hospital.train()
-
-            local_updates = {hid: h.get_local_update() for hid, h in hospitals.items()}
-            round_output = orchestrator.run_round(
-                round_index=global_round_idx,
-                local_updates=local_updates,
-            )
-            orchestrator.broadcast_global_state(hospitals, round_output.global_state)
-            logging.info(f"Completed epoch {epoch_idx}/{num_epochs}, round {round_idx}/{num_rounds} (global round {global_round_idx})")
-
-        validation_result = validation_system(hospitals, output_dir=checkpoint_base, early_stop_threshold=early_stop_threshold, save_to_disk=False)
-        if isinstance(validation_result, tuple):
-            validation_reports, should_stop = validation_result
-        else:
-            validation_reports, should_stop = validation_result, False
-
-        epoch_val_score = _compute_validation_f1_score(validation_reports)
-        logging.info(f"Epoch {epoch_idx} validation avg_f1={epoch_val_score:.4f} (best={best_val_score:.4f})")
-
-        if epoch_val_score > best_val_score:
-            best_val_score = epoch_val_score
-            best_epoch = epoch_idx
-            _save_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{epoch_idx}")
-
-        if should_stop:
-            logging.info(f"Early stopping triggered at epoch {epoch_idx}. Restoring best model from epoch {best_epoch}.")
-            if best_epoch is not None:
-                _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
-            break
-
-    if best_epoch is not None and (not should_stop):
-        logging.info(f"Training completed. Restoring best model from epoch {best_epoch}.")
-        _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
-
 def ensure_output_dirs(config):
     """Ensure output and log directories exist."""
     out_dir = Path(config.get("out_dir", "outputs"))
     log_dir = Path(config.get("tracking", {}).get("log_dir", out_dir / "logs"))
     out_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
-
-
-# --- New function for GUI: run a single federated training round ---
-def run_one_training_round(orchestrator, hospitals, round_idx, for_training=True):
-    """
-    Run a single federated training round and return round output and agent metrics for GUI.
-    Args:
-        orchestrator: FederatedRoundOrchestrator instance
-        hospitals: dict of hospital_id -> HospitalNode
-        round_idx: int, current round index (1-based)
-        for_training: bool, whether to get local updates for training
-    Returns:
-        round_output: output from orchestrator.run_round
-        agent_metrics: dict of hospital_id -> agent metrics (if available)
-    """
-    # Train all hospitals for this round
-    for hospital in hospitals.values():
-        hospital.train()
-    # Collect local updates
-    local_updates = {hid: h.get_local_update(for_training=for_training) for hid, h in hospitals.items()}
-    # Run federated round
-    round_output = orchestrator.run_round(
-        round_index=round_idx,
-        local_updates=local_updates,
-    )
-    orchestrator.broadcast_global_state(hospitals, round_output.global_state)
-    # Optionally, collect agent metrics for GUI display
-    agent_metrics = {}
-    for hid, hospital in hospitals.items():
-        if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
-            metrics = {}
-            for cancer_type in hospital.scope.agent_portfolio.cancer_types:
-                agent = hospital.scope.agent_portfolio.get_agent(cancer_type)
-                metrics[cancer_type] = getattr(agent, "thinking_pattern_name", None)
-            agent_metrics[hid] = metrics
-    return round_output, agent_metrics
 
 
 def validation_system(hospitals, output_dir=None, early_stop_threshold=None, save_to_disk=False):

@@ -9,6 +9,7 @@ import numpy as np
 from .contracts import HospitalDataBundle
 from .hospital_env import HospitalSplits, VirtualHospital
 from .augmentations import augment_dataset
+from ..pre_processing.pipeline import PreprocessingPipeline
 
 SPLIT_NAMES = ("train", "val", "test")
 CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
@@ -23,11 +24,6 @@ class LocalHospitalData:
     cancer_train: np.ndarray
     cancer_val: np.ndarray
     cancer_test: np.ndarray
-
-    def one_vs_rest_labels(self, cancer_type: str, split: Literal["train", "val", "test"]) -> np.ndarray:
-        normalized = _normalize_cancer_type(cancer_type)
-        split_labels = self._split_cancer_labels(split)
-        return (split_labels == normalized).astype(np.int64)
 
     def filter_for_cancer(
         self,
@@ -109,6 +105,23 @@ class LocalDataPipeline:
                     cancer_val=splits.cancer_val,
                     cancer_test=splits.cancer_test,
                 )
+
+        if self.config is not None and self.config.get("preprocessing", {}).get("enabled", False):
+            preprocess_cfg = self.config.get("preprocessing", {})
+            pipeline = PreprocessingPipeline(preprocess_cfg)
+            # Scale train/val/test sets with same parameters
+            splits = HospitalSplits(
+                x_train=pipeline.fit_transform(splits.x_train, splits.y_train),
+                y_train=splits.y_train,
+                x_val=pipeline.transform(splits.x_val),
+                y_val=splits.y_val,
+                x_test=pipeline.transform(splits.x_test),
+                y_test=splits.y_test,
+                test_ids=splits.test_ids,
+                cancer_train=splits.cancer_train,
+                cancer_val=splits.cancer_val,
+                cancer_test=splits.cancer_test,
+            )
 
         return self._to_local_data(splits)
 

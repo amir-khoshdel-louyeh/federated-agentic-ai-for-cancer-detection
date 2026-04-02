@@ -101,49 +101,7 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		self.round_history.append(round_output)
 		return round_output
 
-	def run_round_from_hospitals(
-		self,
-		*,
-		round_index: int,
-		hospitals: Mapping[str, HospitalFederatedClient],
-		previous_global_state: Mapping[str, Any] | None = None,
-	) -> OrchestratorRoundOutput:
-		"""Execute a full round including collection and broadcast."""
-		local_updates = self.collect_local_updates(hospitals)
-		round_output = self.run_round(
-			round_index=round_index,
-			local_updates=local_updates,
-			previous_global_state=previous_global_state,
-		)
-		self.broadcast_global_state(hospitals, round_output.global_state)
-		return round_output
-
-	def run(
-		self,
-		*,
-		total_rounds: int,
-		local_updates_by_round: Mapping[int, Mapping[str, LocalHospitalUpdatePayload]],
-	) -> list[OrchestratorRoundOutput]:
-		"""Run multiple rounds using explicit per-round local updates."""
-		if total_rounds <= 0:
-			raise ValueError("`total_rounds` must be > 0.")
-
-		outputs: list[OrchestratorRoundOutput] = []
-		for round_index in range(1, total_rounds + 1):
-			if round_index not in local_updates_by_round:
-				raise ValueError(
-					f"Missing local updates for round {round_index}. "
-					"Provide updates for every round index from 1..total_rounds."
-				)
-
-			output = self.run_round(
-				round_index=round_index,
-				local_updates=local_updates_by_round[round_index],
-				previous_global_state=self.current_global_state,
-			)
-			outputs.append(output)
-
-		return outputs
+# run_round_from_hospitals and run are deprecated in this minimal pipeline and removed for cleanup.
 
 	def run_with_early_stopping(
 		self,
@@ -266,6 +224,3 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		for hospital in hospitals.values():
 			hospital.apply_global_update(global_state)
 
-	def get_round_history(self) -> list[OrchestratorRoundOutput]:
-		"""Return a copy of the in-memory round history."""
-		return list(self.round_history)

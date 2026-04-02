@@ -35,14 +35,7 @@ class AgentPortfolioContract(Protocol):
     def selected_patterns(self) -> dict[str, str]:
         ...
 
-    def train_all(self, x_train: np.ndarray, y_train: np.ndarray) -> None:
-        ...
-
-    def predict_all(self, x: np.ndarray) -> dict[str, np.ndarray]:
-        ...
-
-    def evaluate_all(self, y_true: np.ndarray, predictions: Mapping[str, np.ndarray]) -> dict[str, dict[str, float]]:
-        ...
+    # Legacy batch convenience is removed because explicit per-agent workflows are handled at caller level.
 
 
 class PatternPolicyContract(Protocol):
@@ -103,6 +96,3 @@ class HospitalLifecycleContract(ABC):
     def apply_global_update(self, global_state: Mapping[str, Any]) -> None:
         """Apply aggregator-provided global state (stub until model syncing is added)."""
 
-    @abstractmethod
-    def get_metadata_for_aggregation(self) -> dict[str, Any]:
-        """Return compact metadata useful for aggregator weighting/routing logic."""

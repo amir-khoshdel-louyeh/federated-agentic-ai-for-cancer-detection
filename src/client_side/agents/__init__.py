@@ -10,7 +10,6 @@ from .rule_clinical_pattern import RuleClinicalThinkingPattern
 from .melanoma_agent import MelanomaAgent
 from .rule_based_pattern import RuleBasedStrictThinkingPattern, RuleBasedThinkingPattern
 from .scc_agent import SCCAgent
-from .orchestrator import OrchestratorAgent
 
 __all__ = [
     "ThinkingPattern",
@@ -26,5 +25,4 @@ __all__ = [
     "SCCAgent",
     "MelanomaAgent",
     "AKIECAgent",
-    "OrchestratorAgent",
 ]
