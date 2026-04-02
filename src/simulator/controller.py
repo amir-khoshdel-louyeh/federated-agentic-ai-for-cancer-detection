@@ -259,11 +259,25 @@ def show_results(results):
     print("\n===== Evaluation Results =====")
     for hid, res in results.items():
         print(f"Hospital: {hid}")
+        logging.info(f"Hospital: {hid}")
         if res is None:
             print("  Evaluation failed.")
+            logging.info("  Evaluation failed.")
         else:
             for k, v in res.items():
                 print(f"  {k}: {v}")
+                logging.info(f"  {k}: {v}")
+
+            # Log meta-probability and selected patterns explicitly
+            meta_mgr = res.get("meta_manager")
+            selected = res.get("selected_patterns")
+            if meta_mgr is not None and "meta_proba" in meta_mgr:
+                meta_proba_strings = np.array2string(np.asarray(meta_mgr["meta_proba"]), precision=8, separator=", ")
+                print(f"  meta_proba: {meta_proba_strings}")
+                logging.info(f"  meta_proba: {meta_proba_strings}")
+            if selected is not None:
+                print(f"  selected_patterns: {selected}")
+                logging.info(f"  selected_patterns: {selected}")
     print("============================\n")
 
 def show_log_location(config):
