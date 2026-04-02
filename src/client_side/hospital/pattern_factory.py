@@ -25,6 +25,7 @@ class ThinkingPatternFactory:
             "bayesian": BayesianThinkingPattern,
             "deep_learning": lambda: DeepLearningThinkingPattern(epochs=deep_learning_epochs, batch_size=deep_learning_batch_size, lr=deep_learning_lr),
             "deep_learning_mc": lambda: MCDropoutThinkingPattern(DeepLearningThinkingPattern(epochs=deep_learning_epochs, batch_size=deep_learning_batch_size, lr=deep_learning_lr)),
+            "pretrained_library": PretrainedLibraryThinkingPattern,
             "logistic": LogisticThinkingPattern,
         }
 

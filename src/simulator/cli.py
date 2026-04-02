@@ -12,9 +12,33 @@ from src.simulator.controller import (
 	validation_system
 )
 
+def choose_agent_mode() -> str:
+	print("\n=== Agent mode selection ===")
+	print("1) Existing logic-based AI agents (rule/deep/logistic/bayesian)")
+	print("2) Library-based powerful AI agents (pretrained ensemble mode)")
+	choice = input("Enter mode (1 or 2) [1]: ").strip() or "1"
+	if choice not in {"1", "2"}:
+		print("Invalid choice, defaulting to 1")
+		choice = "1"
+	return "built_in" if choice == "1" else "library"
+
+
 def main():
 	# Step 1: Load config.yaml
 	config = load_config()
+	mode = choose_agent_mode()
+
+	if mode == "library":
+		config.setdefault("agents", {}).setdefault("patterns", {})
+		config["agents"]["patterns"]["default_mapping"] = {
+			"BCC": "pretrained_library",
+			"SCC": "pretrained_library",
+			"MELANOMA": "pretrained_library",
+			"AKIEC": "pretrained_library",
+		}
+		print("Using pretrained library agent strategy for all specialists.\n")
+	else:
+		print("Using existing logic-based agents.\n")
 
 
 	# Step 2: Initialize system

@@ -8,6 +8,7 @@ from .logistic_pattern import LogisticThinkingPattern
 from .mcdropout_pattern import MCDropoutThinkingPattern
 from .rule_clinical_pattern import RuleClinicalThinkingPattern
 from .melanoma_agent import MelanomaAgent
+from .pretrained import PretrainedLibraryThinkingPattern
 from .rule_based_pattern import RuleBasedStrictThinkingPattern, RuleBasedThinkingPattern
 from .scc_agent import SCCAgent
 
@@ -21,6 +22,7 @@ __all__ = [
     "DeepLearningThinkingPattern",
     "MCDropoutThinkingPattern",
     "LogisticThinkingPattern",
+    "PretrainedLibraryThinkingPattern",
     "BCCAgent",
     "SCCAgent",
     "MelanomaAgent",
