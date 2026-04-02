@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 
 import numpy as np
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_auc_score
+from sklearn.metrics import (accuracy_score, auc, confusion_matrix, f1_score, log_loss,
+                             precision_recall_curve, precision_score, recall_score, roc_auc_score)
 import warnings
 from sklearn.exceptions import UndefinedMetricWarning
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
@@ -211,10 +212,29 @@ class HospitalNode(HospitalLifecycleContract):
                     sensitivity = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
                     specificity = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
 
+                    try:
+                        logloss = log_loss(y_true, probs, labels=[0, 1])
+                    except ValueError:
+                        logloss = 1.0
+
+                    # PR-AUC from precision-recall curve
+                    try:
+                        pr_precision, pr_recall, _ = precision_recall_curve(y_true, probs, pos_label=1)
+                        pr_auc = float(auc(pr_recall, pr_precision))
+                    except ValueError:
+                        pr_auc = 0.0
+
+                    precision_val = precision_score(y_true, preds, zero_division=0)
+                    recall_val = recall_score(y_true, preds, zero_division=0)
+
                     metrics = {
                         "accuracy": float(accuracy),
                         "f1": float(f1),
                         "auc": float(auc) if np.isfinite(auc) else 0.0,
+                        "pr_auc": float(pr_auc),
+                        "precision": float(precision_val),
+                        "recall": float(recall_val),
+                        "log_loss": float(logloss),
                         "sensitivity": float(sensitivity),
                         "specificity": float(specificity),
                     }
@@ -292,31 +312,51 @@ class HospitalNode(HospitalLifecycleContract):
         preds = (probs_arr >= 0.5).astype(int)
         accuracy = float(accuracy_score(y_true, preds))
         f1 = float(f1_score(y_true, preds, zero_division=0))
-        try:
-            auc = roc_auc_score(y_true, probs_arr)
-        except ValueError:
-            auc = 0.5
 
-        # Ensure auc is finite
-        if not np.isfinite(auc):
-            auc = 0.0
+        try:
+            auc_score = roc_auc_score(y_true, probs_arr)
+        except ValueError:
+            auc_score = 0.5
+        if not np.isfinite(auc_score):
+            auc_score = 0.0
+
+        precision_val = float(precision_score(y_true, preds, zero_division=0))
+        recall_val = float(recall_score(y_true, preds, zero_division=0))
+
+        try:
+            pr_precision, pr_recall, _ = precision_recall_curve(y_true, probs_arr, pos_label=1)
+            pr_auc = float(auc(pr_recall, pr_precision))
+        except ValueError:
+            pr_auc = 0.0
+
+        try:
+            logloss_val = float(log_loss(y_true, probs_arr, labels=[0, 1]))
+        except ValueError:
+            logloss_val = float("inf")
 
         # labels=[0, 1] guarantees stable unpacking for degenerate splits.
         tn, fp, fn, tp = confusion_matrix(y_true, preds, labels=[0, 1]).ravel()
         sensitivity = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
         specificity = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
 
-        return {
+        metrics = {
             "accuracy": accuracy,
             "f1": f1,
-            "auc": auc if np.isfinite(auc) else 0.0,
+            "auc": auc_score,
+            "pr_auc": pr_auc,
+            "precision": precision_val,
+            "recall": recall_val,
+            "log_loss": logloss_val,
             "sensitivity": sensitivity,
             "specificity": specificity,
         }
+
         # Ensure all metrics are finite
         for k, v in metrics.items():
             if not np.isfinite(v):
-                metrics[k] = 0.0
+                metrics[k] = 0.0 if k != "log_loss" else float("inf")
+
+        return metrics
 
     @staticmethod
     def _build_candidate_comparisons(

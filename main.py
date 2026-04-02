@@ -119,6 +119,8 @@ simulation:
   simulate_multi: true
   compare_all: true
   num_rounds: 20
+  early_stop_metric: loss
+  early_stop_patience: 10
 
 # # ========================
 # # OUTPUT CONTROL

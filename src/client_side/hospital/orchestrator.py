@@ -165,10 +165,16 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		if num_epochs < 1 or num_rounds < 1:
 			raise ValueError("num_epochs and num_rounds must be positive integers")
 
-		if monitor_metric not in {"f1", "auc"}:
-			raise ValueError("monitor_metric must be 'f1' or 'auc'")
+		if monitor_metric not in {"f1", "auc", "loss"}:
+			raise ValueError("monitor_metric must be 'f1', 'auc', or 'loss'")
 
-		best_metric = float("-inf")
+		if monitor_metric == "loss":
+			best_metric = float("inf")
+			better_than = lambda current, best: current < best - min_delta
+		else:
+			best_metric = float("-inf")
+			better_than = lambda current, best: current > best + min_delta
+
 		best_epoch = 0
 		stale = 0
 		history = []
@@ -200,8 +206,8 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 					if m is not None:
 						values.append(float(m))
 
-			avg_metric = float(sum(values) / len(values)) if values else 0.0
-			if avg_metric > best_metric + min_delta:
+			avg_metric = float(sum(values) / len(values)) if values else (float("inf") if monitor_metric == "loss" else 0.0)
+			if better_than(avg_metric, best_metric):
 				best_metric = avg_metric
 				best_epoch = epoch
 				stale = 0

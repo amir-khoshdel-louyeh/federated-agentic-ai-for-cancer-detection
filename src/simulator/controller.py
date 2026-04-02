@@ -133,8 +133,8 @@ def train_system(config, hospitals, save_history=False, save_models=False):
         out_dir.mkdir(parents=True, exist_ok=True)
 
     early_stop_threshold = config.get("simulation", {}).get("early_stop_threshold")
-    early_stop_metric = config.get("simulation", {}).get("early_stop_metric", "f1")
-    early_stop_patience = int(config.get("simulation", {}).get("early_stop_patience", 2))
+    early_stop_metric = config.get("simulation", {}).get("early_stop_metric", "loss")
+    early_stop_patience = int(config.get("simulation", {}).get("early_stop_patience", 10))
     checkpoint_base = Path(config.get("output", {}).get("checkpoint_dir", "outputs/checkpoints"))
 
     def validation_callback(hospitals_to_validate):
