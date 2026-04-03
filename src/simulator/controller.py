@@ -289,6 +289,21 @@ def test_system(hospitals):
             results[hid] = None
     return results
 
+
+def test_system_on_external_data(hospitals, x_external, cancer_external):
+    """Evaluate all hospitals' agents on the same external data set."""
+    results = {}
+    import traceback
+    for hid, hospital in hospitals.items():
+        try:
+            results[hid] = hospital.evaluate_on_external_data(x_external, cancer_external)
+            logging.info(f"External test completed for hospital {hid}")
+        except Exception as e:
+            logging.error(f"External testing failed for hospital {hid}: {e}\nTraceback:\n{traceback.format_exc()}")
+            results[hid] = None
+    return results
+
+
 def show_results(results):
     """Log evaluation results."""
     logging.info("===== Evaluation Results =====")

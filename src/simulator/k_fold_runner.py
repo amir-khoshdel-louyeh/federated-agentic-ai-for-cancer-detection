@@ -6,9 +6,35 @@ from src.simulator.controller import (
     train_system,
     validation_system,
     test_system,
+    test_system_on_external_data,
     show_results,
     show_log_location,
 )
+
+
+def _collect_external_holdout(hospitals, n_samples, random_seed):
+    """Gather final holdout test holders from all hospitals and sample n_samples."""
+    import numpy as np
+
+    x_candidates = []
+    cancer_candidates = []
+    for hospital in hospitals.values():
+        if hospital.local_data is None:
+            continue
+        x_candidates.append(hospital.local_data.bundle.x_test)
+        cancer_candidates.append(hospital.local_data.cancer_test)
+
+    if not x_candidates:
+        raise RuntimeError("No hospital test data available to sample external holdout data.")
+
+    x_all = np.vstack(x_candidates)
+    cancer_all = np.concatenate(cancer_candidates)
+
+    n_samples = min(n_samples, x_all.shape[0])
+    rng = np.random.default_rng(random_seed)
+    selected = rng.choice(x_all.shape[0], size=n_samples, replace=False)
+
+    return x_all[selected], cancer_all[selected]
 
 
 def run_k_fold_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -46,5 +72,21 @@ def run_k_fold_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
         print(show_log_location(config))
 
         aggregated_results[f"fold_{fold}"] = results
+
+    # Optional final external holdout test after all folds are complete
+    final_test_cfg = config.get("data_split", {}).get("final_test", {})
+    if final_test_cfg.get("enabled", False):
+        n_samples = int(final_test_cfg.get("n_samples", 100))
+        random_seed = int(final_test_cfg.get("random_seed", config.get("sampling", {}).get("random_seed", 42)))
+
+        x_holdout, cancer_holdout = _collect_external_holdout(hospitals, n_samples, random_seed)
+        logging.info(f"Running final external holdout test with {x_holdout.shape[0]} samples")
+        print(f"Running final external holdout test with {x_holdout.shape[0]} samples")
+
+        final_results = test_system_on_external_data(hospitals, x_holdout, cancer_holdout)
+        show_results(final_results)
+        show_log_location(config)
+
+        aggregated_results["final_external_test"] = final_results
 
     return aggregated_results

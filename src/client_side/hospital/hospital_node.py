@@ -293,6 +293,65 @@ class HospitalNode(HospitalLifecycleContract):
 
         return self.scope.report_output
 
+    def evaluate_on_external_data(
+        self,
+        x_external: np.ndarray,
+        cancer_external: np.ndarray,
+    ) -> dict[str, Any]:
+        """Evaluate current agent portfolio on an external held-out data set."""
+        if self.scope.agent_portfolio is None:
+            raise RuntimeError("HospitalNode requires an agent portfolio before evaluate_on_external_data().")
+
+        if x_external is None or cancer_external is None:
+            raise ValueError("x_external and cancer_external cannot be None")
+        if len(x_external) != len(cancer_external):
+            raise ValueError("x_external and cancer_external must have same number of samples")
+
+        test_metrics = {}
+        selected_patterns = self.metrics_store.get("selected_patterns", self.scope.agent_portfolio.selected_patterns())
+        selected_performance = {}
+
+        for cancer_type, pattern_name in selected_patterns.items():
+            agent = self.scope.agent_portfolio.get_agent(cancer_type)
+            y_test = (np.asarray(cancer_external, dtype=str) == cancer_type.upper()).astype(np.int64)
+            if x_external.shape[0] == 0:
+                test_probs = np.array([])
+            else:
+                test_probs = agent.predict_proba(x_external)
+
+            self._validate_prediction_shape(agent.name, test_probs, expected_size=x_external.shape[0])
+
+            if x_external.shape[0] > 0:
+                metrics = self._compute_binary_metrics(y_test, test_probs, threshold=self.decision_threshold)
+            else:
+                metrics = {
+                    "accuracy": 0.0,
+                    "f1": 0.0,
+                    "auc": 0.5,
+                    "pr_auc": 0.0,
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "log_loss": float("inf"),
+                    "sensitivity": 0.0,
+                    "specificity": 0.0,
+                }
+
+            test_metrics[f"{cancer_type.lower()}::{pattern_name}"] = metrics
+            selected_performance[cancer_type] = {
+                "pattern": pattern_name,
+                "test": metrics,
+            }
+
+        return {
+            "hospital_id": self.hospital_id,
+            "metrics": {
+                "test": test_metrics,
+                "selected_performance": selected_performance,
+            },
+            "selected_patterns": selected_patterns,
+            "external_sample_count": int(x_external.shape[0]),
+        }
+
     @staticmethod
     def _compute_binary_metrics(y_true: np.ndarray, probs, threshold: float = 0.5) -> dict[str, float]:
         # Handle degenerate class splits before calling sklearn metrics to avoid lots of warnings

@@ -23,6 +23,10 @@ data_split:
   train: 0.8
   validation: 0.1
   test: 0.1
+  final_test:
+    enabled: true
+    n_samples: 100
+    random_seed: 42
 
 sampling:
   total_samples: 1000  # Set to desired number, or null for all available

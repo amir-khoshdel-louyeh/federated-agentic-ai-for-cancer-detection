@@ -16,6 +16,10 @@ data_split:
   current_fold: 0  # 0..k_folds-1 for cross-validation rounds (0 means first fold)
   stratify: true  # use stratified split on malignancy label (target) to preserve class ratio
   mode: tabular  # options: tabular, image, combined
+  final_test:
+    enabled: true
+    n_samples: 100
+    random_seed: 42
 
 augmentation:
   enabled: true
@@ -26,7 +30,7 @@ augmentation:
   num_augmented_copies: 0  # 0 means no additional synthetic copies beyond original
 
 sampling:
-  total_samples: 1000  # Increased from 100 for better class coverage
+  total_samples: 10000  # Use all images: 5000 per hospital
   random_seed: 42
   # Samples are always divided equally among hospitals. Total samples must be divisible by the number of hospitals.
 
@@ -120,7 +124,7 @@ tracking:
 # # EXPERIMENT CONTROL
 # # ========================
 training:
-  max_local_samples: 500  # cap per-cancer local training samples to keep speed stable with big datasets
+  max_local_samples: 5000  # cap per-cancer local training samples to keep speed stable with big datasets
   rebalance_method: smote  # options: smote, oversample
   imbalance_ratio_threshold: 5
   decision_threshold: 0.4  # evaluate predictions with threshold for binary classification
