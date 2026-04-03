@@ -1,7 +1,6 @@
 from configs.config_loader import load_config
 from pathlib import Path
 import logging
-import sys
 from src.client_side.hospital.agent_portfolio import AgentPortfolio
 from src.client_side.hospital.hospital_node import HospitalNode
 from src.client_side.hospital.data_pipeline import LocalDataPipeline
@@ -9,6 +8,37 @@ from src.client_side.hospital.orchestrator import FederatedRoundOrchestrator
 from src.client_side.hospital.pattern_factory import create_thinking_pattern
 
 
+
+
+def configure_logging(config):
+    """Configure global logging so everything routes to file, warnings show on console."""
+    log_dir = Path(config.get("tracking", {}).get("log_dir", "outputs/logs"))
+    log_file = config.get("tracking", {}).get("log_file_name", "simulation.log")
+    log_path = log_dir / log_file
+
+    out_dir = Path(config.get("out_dir", "outputs"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    root_logger = logging.getLogger()
+    for handler in list(root_logger.handlers):
+        root_logger.removeHandler(handler)
+
+    root_logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+
+    file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    logging.captureWarnings(True)
+    logging.info(f"Logging initialized: {log_path}")
 
 
 def make_hospitals(config, data_pipeline):
@@ -49,28 +79,13 @@ def make_hospitals(config, data_pipeline):
 def initialize_system(config):
     """Initialize config, output dirs, logging, data pipeline, and hospitals."""
     ensure_output_dirs(config)
-    log_dir = Path(config.get("tracking", {}).get("log_dir", "outputs/logs"))
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / config.get("tracking", {}).get("log_file_name", "simulation.log")
-
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    # Clear existing handlers (avoid duplicates in repeated init calls)
-    if root_logger.handlers:
-        root_logger.handlers = []
-
-    file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
-    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(stream_handler)
+    configure_logging(config)
 
     data_pipeline = LocalDataPipeline()
     hospitals = make_hospitals(config, data_pipeline)
     allocate_data(hospitals)
     logging.info("System initialized.")
+    print("System initialized.")
     return hospitals
 
 
@@ -217,17 +232,37 @@ def train_system(config, hospitals, save_history=False, save_models=False):
                 json.dump(federated_decision_log, f, indent=2)
 
     # Checkpoint best epoch if available and stop state
-    if out.get("best_epoch") is not None:
-        _save_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{out['best_epoch']}")
-        if out.get("stopped_early"):
-            logging.info(f"Early stopping triggered at epoch {out['best_epoch']}. Restoring best model from epoch {out['best_epoch']}." )
-            _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{out['best_epoch']}")
+    best_epoch = out.get("best_epoch")
+    should_stop = out.get("stopped_early", False)
+
+    if best_epoch is not None:
+        _save_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
+
+        if should_stop:
+            logging.info(f"Early stopping triggered at epoch {best_epoch}. Restoring best model from epoch {best_epoch}.")
+            _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
+            print(f"Early stopping triggered at epoch {best_epoch}. Restoring best model from epoch {best_epoch}.")
+        else:
+            logging.info(f"Training completed. Restoring best model from epoch {best_epoch}.")
+            _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
+            print(f"Training completed. Restoring best model from epoch {best_epoch}." )
+
+    # After training, optionally save all models for each hospital to outputs/system
+    if save_models:
+        system_dir = Path("outputs/system")
+        system_dir.mkdir(parents=True, exist_ok=True)
+        for hid, hospital in hospitals.items():
+            if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
+                portfolio = hospital.scope.agent_portfolio
+                if hasattr(portfolio, "save_all_models"):
+                    portfolio.save_all_models(str(system_dir), hid)
 
     return orchestrator
 
     # on completion, if early stop was not triggered, optionally restore best model
     if best_epoch is not None and (not should_stop):
         logging.info(f"Training completed. Restoring best model from epoch {best_epoch}.")
+        print(f"Training completed. Restoring best model from epoch {best_epoch}." )
         _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
 
     # After training, optionally save all models for each hospital to outputs/system
@@ -255,35 +290,23 @@ def test_system(hospitals):
     return results
 
 def show_results(results):
-    """Display or save evaluation results."""
-    print("\n===== Evaluation Results =====")
+    """Log evaluation results."""
+    logging.info("===== Evaluation Results =====")
+    print("===== Evaluation Results =====")
     for hid, res in results.items():
-        print(f"Hospital: {hid}")
         logging.info(f"Hospital: {hid}")
         if res is None:
-            print("  Evaluation failed.")
-            logging.info("  Evaluation failed.")
+            logging.warning("  Evaluation failed.")
         else:
             for k, v in res.items():
-                print(f"  {k}: {v}")
                 logging.info(f"  {k}: {v}")
+    logging.info("============================")
 
-            # Log meta-probability and selected patterns explicitly
-            meta_mgr = res.get("meta_manager")
-            selected = res.get("selected_patterns")
-            if meta_mgr is not None and "meta_proba" in meta_mgr:
-                meta_proba_strings = np.array2string(np.asarray(meta_mgr["meta_proba"]), precision=8, separator=", ")
-                print(f"  meta_proba: {meta_proba_strings}")
-                logging.info(f"  meta_proba: {meta_proba_strings}")
-            if selected is not None:
-                print(f"  selected_patterns: {selected}")
-                logging.info(f"  selected_patterns: {selected}")
-    print("============================\n")
 
 def show_log_location(config):
     log_dir = Path(config.get("tracking", {}).get("log_dir", "outputs/logs"))
     log_file = config.get("tracking", {}).get("log_file_name", "simulation.log")
-    print(f"Logs saved at: {log_dir / log_file}")
+    logging.info(f"Logs saved at: {log_dir / log_file}")
 
 def allocate_data(hospitals):
     """Load data and initialize each hospital."""
@@ -346,8 +369,11 @@ def validation_system(hospitals, output_dir=None, early_stop_threshold=None, sav
                 json.dump({"hospital_id": hid, "validation": hospital_validation}, f, indent=2)
 
             logging.info(f"Saved validation metrics for hospital {hid} to {output_dir / f'{hid}_validation_metrics.json'}")
+            print(f"Saved validation metrics for hospital {hid} to {output_dir / f'{hid}_validation_metrics.json'}")
         else:
             logging.info(f"Validation metrics computed for hospital {hid}; disk save is disabled.")
+            print(f"Validation metrics computed for hospital {hid}; disk save is disabled.")
+
 
     should_stop = False
     if early_stop_threshold is not None:

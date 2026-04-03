@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 from typing import Any, Literal, Mapping
 
 import numpy as np
@@ -231,7 +232,7 @@ class HospitalNode(HospitalLifecycleContract):
 
         # Store per-agent metrics for federation
         self.metrics_store.setdefault("evaluation", {})["test"] = per_agent_metrics
-        print(f"[DEBUG] Hospital {self.hospital_id} per_agent_metrics: {per_agent_metrics}")
+        logging.debug(f"[DEBUG] Hospital {self.hospital_id} per_agent_metrics: {per_agent_metrics}")
         self.metrics_store["lifecycle_state"] = "trained"
 
     def evaluate(self) -> dict[str, Any]:
@@ -469,7 +470,7 @@ class HospitalNode(HospitalLifecycleContract):
             }
         # Debug print for metrics.per_agent
         per_agent_metrics = output.get("metrics", {}).get("per_agent", {})
-        print(f"[DEBUG] Hospital {self.hospital_id} metrics.per_agent: {per_agent_metrics}")
+        logging.debug(f"[DEBUG] Hospital {self.hospital_id} metrics.per_agent: {per_agent_metrics}")
         assert per_agent_metrics, f"metrics.per_agent is empty for hospital {self.hospital_id}!"
         self.scope.report_output = output
         return output

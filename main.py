@@ -2,6 +2,7 @@
 
 import os
 import runpy
+import logging
 
 CONFIG_DIR = "configs"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.yaml")
@@ -154,9 +155,9 @@ def ensure_config():
     if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "w") as f:
             f.write(DEFAULT_CONFIG)
-        print("✅ config.yaml created in configs/")
+        logging.info("✅ config.yaml created in configs/")
     else:
-        print("✔ config.yaml already exists")
+        logging.info("✔ config.yaml already exists")
 
 
 if __name__ == "__main__":
