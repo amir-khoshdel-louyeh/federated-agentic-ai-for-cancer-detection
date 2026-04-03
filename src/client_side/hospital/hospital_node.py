@@ -25,6 +25,7 @@ from .contracts import (
     PatternPolicyContract,
 )
 from .agent_portfolio import AgentPortfolio
+from .config_helpers import get_cancer_types
 from .data_pipeline import LocalDataPipeline, LocalHospitalData
 from .hospital_env import VirtualHospital
 from .output_schema import build_hospital_output
@@ -36,14 +37,7 @@ from .pattern_policy import StaticPatternPolicy
 class HospitalNode(HospitalLifecycleContract):
     @staticmethod
     def _expected_cancer_types_from_config(config: dict | None) -> tuple[str, ...]:
-        if not config:
-            return ("BCC", "SCC", "MELANOMA", "AKIEC")
-
-        default_mapping = (config.get("agents", {}).get("patterns", {}).get("default_mapping", {}))
-        if isinstance(default_mapping, dict) and default_mapping:
-            return tuple(sorted({str(k).strip().upper() for k in default_mapping.keys()}))
-
-        return ("BCC", "SCC", "MELANOMA", "AKIEC")
+        return get_cancer_types(config)
 
     """Central orchestrator for one hospital in the federated workflow."""
 
@@ -76,7 +70,8 @@ class HospitalNode(HospitalLifecycleContract):
         self.dataset_handler = dataset_handler or VirtualHospital(config=config)
         self.data_pipeline = data_pipeline or LocalDataPipeline(dataset_handler=self.dataset_handler, hospital_id=hospital_id, config=config)
         self.local_data: LocalHospitalData | None = None
-        resolved_portfolio = agent_portfolio or AgentPortfolio()
+        cancer_types = get_cancer_types(config)
+        resolved_portfolio = agent_portfolio or AgentPortfolio(cancer_types=cancer_types)
         resolved_policy = pattern_policy or StaticPatternPolicy(hospital_id=hospital_id, config=config)
 
         self.scope = HospitalScope(
@@ -153,6 +148,7 @@ class HospitalNode(HospitalLifecycleContract):
         per_agent_metrics: dict[str, dict] = {}
 
         max_local_samples = int(self.config.get("training", {}).get("max_local_samples", 0)) if self.config else 0
+        random_state = int(getattr(self.dataset_handler, "random_state", 42))
 
         for cancer_type in self.scope.agent_portfolio.cancer_types:
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
@@ -164,7 +160,7 @@ class HospitalNode(HospitalLifecycleContract):
             x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
 
             if max_local_samples > 0 and x_train.shape[0] > max_local_samples:
-                rng = np.random.default_rng(self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42)
+                rng = np.random.default_rng(random_state)
                 sel_idx = rng.choice(x_train.shape[0], size=max_local_samples, replace=False)
                 x_train = x_train[sel_idx]
                 y_train = y_train[sel_idx]
@@ -188,7 +184,7 @@ class HospitalNode(HospitalLifecycleContract):
                     if rebalance_method == 'smote':
                         try:
                             from imblearn.over_sampling import SMOTE
-                            smote = SMOTE(random_state=self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42)
+                            smote = SMOTE(random_state=random_state)
                             x_train, y_train = smote.fit_resample(x_train, y_train)
                             training_warnings[cancer_type] = (training_warnings.get(cancer_type, "") + " SMOTE oversampling applied.").strip()
                         except ImportError:
@@ -204,11 +200,11 @@ class HospitalNode(HospitalLifecycleContract):
                                 y_minority,
                                 replace=True,
                                 n_samples=x_majority.shape[0],
-                                random_state=self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42,
+                                random_state=random_state,
                             )
                             x_train = np.vstack([x_majority, x_minority_up])
                             y_train = np.concatenate([y_majority, y_minority_up])
-                            perm = np.random.default_rng(self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42).permutation(x_train.shape[0])
+                            perm = np.random.default_rng(random_state).permutation(x_train.shape[0])
                             x_train = x_train[perm]
                             y_train = y_train[perm]
                             training_warnings[cancer_type] = (training_warnings.get(cancer_type, "") + " SMOTE unavailable, fallback oversampling applied.").strip()
@@ -224,11 +220,11 @@ class HospitalNode(HospitalLifecycleContract):
                             y_minority,
                             replace=True,
                             n_samples=x_majority.shape[0],
-                            random_state=self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42,
+                            random_state=random_state,
                         )
                         x_train = np.vstack([x_majority, x_minority_up])
                         y_train = np.concatenate([y_majority, y_minority_up])
-                        perm = np.random.default_rng(self.dataset_handler.random_state if hasattr(self.dataset_handler, 'random_state') else 42).permutation(x_train.shape[0])
+                        perm = np.random.default_rng(random_state).permutation(x_train.shape[0])
                         x_train = x_train[perm]
                         y_train = y_train[perm]
                         training_warnings[cancer_type] = (training_warnings.get(cancer_type, "") + " Class imbalance oversampled minority class.").strip()

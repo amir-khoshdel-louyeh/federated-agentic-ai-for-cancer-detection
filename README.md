@@ -192,6 +192,36 @@ You can now use a command-line interface to run the system using your config.yam
 python main.py cli --config configs/config.yaml
 ```
 
+## Configuration Reference (New)
+
+The pipeline now supports a centralized, configurable setup from `configs/config.yaml`:
+
+- `cancer_types`: dynamic set of types in use (default: BCC, SCC, MELANOMA, AKIEC)
+- `data_split`: includes `holdout_test`, `k_folds`, `current_fold`, plus optional:
+  - `malignant_ham` (HAM10000 malignant class labels, lowercase)
+  - `malignant_isic` (ISIC malignant labels, uppercase)
+- `agents.types`: active agent subtype list
+- `agents.patterns.default_mapping`: maps each cancer type to a thinking pattern (e.g. `BCC: pretrained_library`)
+- `agents.patterns.pattern_params`: per-pattern hyperparameters, including:
+  - `rule_based`: `threshold`, `weights`, `scale`
+  - `rule_based_strict`: `threshold`
+  - `rule_clinical`: `age_threshold`, `pediatric_penalty`, `weights`, `scale`
+  - `logistic`: `C`, `penalty`, `class_weight`, `max_iter`, `random_state`
+  - `pretrained_library`: `max_iter`, `learning_rate`, `max_depth`, `class_weight`, `random_state`
+- `federation`: includes `aggregation_algorithm` and
+  - `fedprox.mu`
+  - `adaptive.alpha`, `beta`, `gamma`, `auc_weight`, `f1_weight`, `lifecycle_penalty`, `warning_penalty_per_item`, `min_reliability_score`
+
+These settings drive behavior in:
+
+- `src/client_side/hospital/agent_portfolio.py` (dynamic cancer type portfolio)
+- `src/client_side/hospital/hospital_node.py` (policy and thresholds)
+- `src/client_side/hospital/hospital_env.py` (data labels and splitting)
+- `src/client_side/hospital/pattern_policy.py` (pattern mapping and fallback)
+- `src/client_side/hospital/pattern_factory.py` (pattern construction from config)
+- `src/server_side/federated_learning/aggregators.py` (federation weights and penalty configuration)
+- `src/simulator/cli.py` (library-mode mapping uses configured cancer type set)
+
 This will load all parameters from `configs/config.yaml` and run the CLI interface defined in `src/simulator/cli.py`.
 
 You can still run the original hospital main for local-only experiments:

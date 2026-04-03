@@ -23,7 +23,7 @@ class AgentPortfolioContract(Protocol):
     """Contract for a hospital portfolio of fixed cancer-domain agents."""
 
     @property
-    def cancer_types(self) -> tuple[str, str, str, str]:
+    def cancer_types(self) -> tuple[str, ...]:
         ...
 
     def get_agent(self, cancer_type: str) -> Any:
