@@ -109,18 +109,19 @@ class HospitalNode(HospitalLifecycleContract):
         self._validate_selected_patterns(self.metrics_store["selected_patterns"])
         self.metrics_store["random_seed"] = int(getattr(self.dataset_handler, "random_state", 0))
 
-    def _decision_threshold_for(self, cancer_type: str) -> float:
-        key = str(cancer_type).strip().upper()
-        if key in self.decision_thresholds:
-            return self.decision_thresholds[key]
-        return self.decision_threshold
+        # Register split sizes and initial lifecycle state before training.
         self.metrics_store["split_sizes"] = {
             "train": int(self.scope.data.x_train.shape[0]),
             "val": int(self.scope.data.x_val.shape[0]),
             "test": int(self.scope.data.x_test.shape[0]),
         }
-
         self.metrics_store["lifecycle_state"] = "initialized"
+
+    def _decision_threshold_for(self, cancer_type: str) -> float:
+        key = str(cancer_type).strip().upper()
+        if key in self.decision_thresholds:
+            return self.decision_thresholds[key]
+        return self.decision_threshold
 
     def get_cancer_filtered_split(
         self,
