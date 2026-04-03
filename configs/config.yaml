@@ -61,7 +61,7 @@ augmentation:
   num_augmented_copies: 0
 
 sampling:
-  total_samples: 10000
+  total_samples: 6000
   random_seed: 42
 
 # ========================
@@ -153,9 +153,10 @@ agents:
         random_state: 42
 
       pretrained_library:
-        max_iter: 200
-        learning_rate: 0.1
+        max_iter: 300
+        learning_rate: 0.05
         max_depth: 8
+        l2_regularization: 1.5 
         class_weight: balanced
         random_state: 42
 
@@ -166,7 +167,7 @@ agents:
 # ========================
 
 finalizer:
-  threshold: 0.3
+  threshold: 0.15
 
 # ========================
 # META-AGENT CONTROL
@@ -215,14 +216,15 @@ tracking:
 
 training:
   max_local_samples: 2000
-  rebalance_method: oversample
+  rebalance_method: none
   imbalance_ratio_threshold: 5
-  decision_threshold: 0.3
+  decision_threshold: 0.15
   decision_thresholds:
-    BCC: 0.3
-    SCC: 0.3
-    MELANOMA: 0.3
-    AKIEC: 0.3
+    BCC: 0.1
+    SCC: 0.1
+    MELANOMA: 0.1
+    AKIEC: 0.1
+
 
 simulation:
   simulate_multi: true

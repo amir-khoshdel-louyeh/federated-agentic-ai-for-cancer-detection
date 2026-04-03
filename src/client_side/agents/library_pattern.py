@@ -20,6 +20,7 @@ class PretrainedLibraryThinkingPattern(ThinkingPattern):
         max_iter: int = 200,
         learning_rate: float = 0.1,
         max_depth: int = 6,
+        l2_regularization: float = 0.0,
         class_weight: str | dict | None = "balanced",
         random_state: int = 42,
     ) -> None:
@@ -28,6 +29,7 @@ class PretrainedLibraryThinkingPattern(ThinkingPattern):
             max_iter=max_iter,
             learning_rate=learning_rate,
             max_leaf_nodes=2 ** max_depth,
+            l2_regularization=l2_regularization,
             class_weight=class_weight,
             random_state=random_state,
         )
@@ -42,10 +44,13 @@ class PretrainedLibraryThinkingPattern(ThinkingPattern):
         if not isinstance(params, dict):
             params = {}
 
+        l2_reg = float(params.get("l2_regularization", 1.0))
+
         return cls(
             max_iter=int(params.get("max_iter", 200)),
             learning_rate=float(params.get("learning_rate", 0.1)),
             max_depth=int(params.get("max_depth", 6)),
+            l2_regularization=l2_reg,
             class_weight=params.get("class_weight", "balanced"),
             random_state=int(params.get("random_state", 42)),
         )

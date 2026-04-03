@@ -7,81 +7,181 @@ import logging
 CONFIG_DIR = "configs"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.yaml")
 
-DEFAULT_CONFIG = """# # ========================
-# # DATA SOURCES
-# # ========================
+DEFAULT_CONFIG = """# Federation of local hospitals agents for skin cancer detection.
+# Config fields map directly to components in src/* modules.
+
+# ========================
+# DATA SOURCES
+# ========================
+
+# Optional explicit set of cancer types supported by this run.
+# If omitted, code defaults to [BCC, SCC, MELANOMA, AKIEC].
+cancer_types:
+  - BCC
+  - SCC
+  - MELANOMA
+  - AKIEC
+
+# Datasets loaded and used to create the local hospital sets.
 enabled_datasets:
   - HAM10000
+
 ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
 isic_csv: 'src/client_side/datasets/ISIC2019/ISIC2019_metadata.csv'
 out_dir: outputs
 
-# # ========================
-# # DATA SPLIT & SAMPLING
-# # ========================
+# ========================
+# DATA SPLIT, MALIGNANCY MAPPINGS, AUGMENTATION, SAMPLING
+# ========================
+
 data_split:
-  train: 0.8
-  validation: 0.1
-  test: 0.1
+  # Holdout test fraction for k-fold runs (k_folds > 1) or data split mode
+  holdout_test: 0.1
+  k_folds: 5
+  current_fold: 0
+
+  # malignant labels per dataset to compute binary target.
+  malignant_ham:
+    - mel
+    - bcc
+    - akiec
+    - scc
+  malignant_isic:
+    - MEL
+    - BCC
+    - AK
+    - SCC
+
+  # stratified split helps preserve malignancy ratios.
+  stratify: true
+  mode: tabular
+
   final_test:
     enabled: true
     n_samples: 100
     random_seed: 42
 
-sampling:
-  total_samples: 1000  # Set to desired number, or null for all available
-  random_seed: 42
-  # Samples are always divided equally among hospitals. Total samples must be divisible by the number of hospitals.
+augmentation:
+  enabled: true
+  rotation_prob: 0.15
+  flip_prob: 0.15
+  color_jitter_strength: 0.1
+  hair_removal_strength: 0.05
+  num_augmented_copies: 0
 
-# # ========================
-# # SYSTEM SETUP
-# # ========================
-hospital_ids: HOSPITAL1
+sampling:
+  total_samples: 6000
+  random_seed: 42
+
+# ========================
+# SYSTEM SETTINGS
+# ========================
+
+hospital_ids: HOSPITAL1, HOSPITAL2
 num_agents_per_hospital: 4
 
-# # ========================
-# # FEDERATED LEARNING
-# # ========================
+# ========================
+# FEDERATED LEARNING SETTINGS
+# ========================
+
 federation:
-  aggregation_algorithm: no_operation
+  aggregation_algorithm: fedprox
+
   fedprox:
-    mu: 0.1
+    mu: 0.5
+
   adaptive:
     alpha: 0.5
     beta: 0.3
     gamma: 0.2
     auc_weight: 0.75
     f1_weight: 0.25
+    lifecycle_penalty: 0.35
+    warning_penalty_per_item: 0.05
+    min_reliability_score: 0.0
     hospital_weighting: dynamic
 
-# # ========================
-# # AGENT CONFIGURATION
-# # ========================
+# ========================
+# AGENT CONFIGURATION
+# ========================
+
 agents:
   types:
     - akiec_agent
     - bcc_agent
     - melanoma_agent
     - scc_agent
+
   patterns:
     available:
       - rule_based
+      - rule_based_strict
+      - rule_clinical
       - bayesian
       - deep_learning
+      - logistic
+      - pretrained_library
+
     default_mapping:
-      BCC: rule_based
-      SCC: rule_based
-      MELANOMA: deep_learning
-      AKIEC: bayesian
-    allow_dynamic_switch: true
+      BCC: pretrained_library
+      SCC: pretrained_library
+      MELANOMA: pretrained_library
+      AKIEC: pretrained_library
 
-# # FINALIZER AGENT CONFIGURATION
+    pattern_params:
+      rule_based:
+        threshold: 0.58
+        weights:
+          asymmetry: 0.28
+          border: 0.22
+          color: 0.18
+          diameter: 0.14
+          age: 0.10
+          sex: 0.04
+          site: 0.04
+        scale: 10.0
+
+      rule_based_strict:
+        threshold: 0.68
+
+      rule_clinical:
+        age_threshold: 30
+        pediatric_penalty: 0.6
+        weights:
+          asymmetry: 0.35
+          border: 0.25
+          color: 0.20
+          diameter: 0.20
+        scale: 10.0
+
+      logistic:
+        C: 1.0
+        penalty: l2
+        class_weight: balanced
+        max_iter: 1000
+        random_state: 42
+
+      pretrained_library:
+        max_iter: 300
+        learning_rate: 0.05
+        max_depth: 8
+        l2_regularization: 1.5 
+        class_weight: balanced
+        random_state: 42
+
+    allow_dynamic_switch: false
+
+# ========================
+# FINALIZER
+# ========================
+
 finalizer:
-  threshold: 0.5  # Confidence threshold for clean/no-cancer decision
+  threshold: 0.15
 
-# # ========================
-# # META-AGENT CONTROL
-# # ========================
+# ========================
+# META-AGENT CONTROL
+# ========================
+
 meta_agent:
   local:
     enable: true
@@ -90,32 +190,26 @@ meta_agent:
       use_auc: true
       use_f1: true
       use_confidence: true
+
   global:
     enable: true
     anomaly_detection: true
     trust_reweighting: true
 
-# # ========================
-# # PRIVACY & SECURITY
-# # ========================
+# ========================
+# PRIVACY & SECURITY
+# ========================
+
 privacy:
   differential_privacy:
-    enabled: true
-    epsilon: 1.0
-  secure_aggregation: true
+    enabled: false
+    epsilon: 10.0
+  secure_aggregation: false
 
-# # ========================
-# # PREPROCESSING
-# # ========================
-preprocessing:
-  enabled: true
-  scale: true
-  lesion_split: false
+# ========================
+# TRACKING & LOGGING
+# ========================
 
-# # ========================
-
-# # TRACKING & LOGGING
-# # ========================
 tracking:
   track_per_agent: true
   track_per_hospital: true
@@ -125,25 +219,35 @@ tracking:
   log_dir: outputs/logs
   log_file_name: simulation.log
 
-# # ========================
-# # TRAINING
-# # ========================
-training:
-  imbalance_ratio_threshold: 10  # max majority/minority ratio allowed before oversampling
+# ========================
+# TRAINING
+# ========================
 
-# # ========================
-# # EXPERIMENT CONTROL
-# # ========================
+training:
+  max_local_samples: 2000
+  rebalance_method: none
+  imbalance_ratio_threshold: 5
+  decision_threshold: 0.15
+  decision_thresholds:
+    BCC: 0.1
+    SCC: 0.1
+    MELANOMA: 0.1
+    AKIEC: 0.1
+
+
 simulation:
   simulate_multi: true
   compare_all: true
-  num_rounds: 20
-  early_stop_metric: loss
-  early_stop_patience: 10
+  num_rounds: 8
+  num_epoch: 3
+  early_stop_metric: auc
+  early_stop_patience: 3
+  batch_size: 16
 
-# # ========================
-# # OUTPUT CONTROL
-# # ========================
+# ========================
+# OUTPUT SETTINGS
+# ========================
+
 output:
   save_global_model: true
   save_local_models: false
