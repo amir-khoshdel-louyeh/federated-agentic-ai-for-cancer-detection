@@ -6,8 +6,13 @@ from typing import Mapping, Optional
 
 from .pattern_factory import ThinkingPatternFactory
 
-CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
 ValidationScoreByPattern = Mapping[str, Mapping[str, float]]
+
+def _cancer_types_from_mapping(mapping: Mapping[str, str] | None) -> tuple[str, ...]:
+    if not mapping:
+        return ("BCC", "SCC", "MELANOMA", "AKIEC")
+    return tuple(sorted({key.strip().upper() for key in mapping.keys()}))
+
 
 def _extract_default_mapping_from_config(config: Optional[dict]) -> dict:
     # Try to extract from config['agents']['patterns']['default_mapping']
@@ -47,13 +52,16 @@ class StaticPatternPolicy:
         return dict(resolved)
 
     @staticmethod
-    def _validate_mapping(mapping: Mapping[str, str]) -> None:
-        missing = [cancer_type for cancer_type in CANCER_TYPES if cancer_type not in mapping]
-        extra = [cancer_type for cancer_type in mapping if cancer_type not in CANCER_TYPES]
+    def _validate_mapping(mapping: Mapping[str, str], expected_cancer_types: tuple[str, ...] | None = None) -> None:
+        if expected_cancer_types is None:
+            expected_cancer_types = _cancer_types_from_mapping(mapping)
+
+        missing = [cancer_type for cancer_type in expected_cancer_types if cancer_type not in mapping]
+        extra = [cancer_type for cancer_type in mapping if cancer_type not in expected_cancer_types]
         if missing or extra:
             raise ValueError(
                 "Pattern policy must define exactly these cancer types: "
-                f"{', '.join(CANCER_TYPES)}"
+                f"{', '.join(expected_cancer_types)}"
             )
 
         supported = set(ThinkingPatternFactory().supported_patterns())
@@ -80,7 +88,8 @@ class AdaptivePatternPolicy(StaticPatternPolicy):
         resolved = {key.strip().upper(): value.strip().lower() for key, value in current_mapping.items()}
         self._validate_mapping(resolved)
 
-        for cancer_type in CANCER_TYPES:
+        dynamic_cancer_types = _cancer_types_from_mapping(resolved)
+        for cancer_type in dynamic_cancer_types:
             candidates = validation_scores.get(cancer_type, {})
             if not candidates:
                 continue

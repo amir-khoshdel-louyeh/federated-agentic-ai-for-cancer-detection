@@ -30,22 +30,43 @@ class ThinkingPatternFactory:
             "logistic": LogisticThinkingPattern,
         }
 
-    def create(self, name: str) -> ThinkingPattern:
+    def create(self, name: str, pattern_config: dict | None = None) -> ThinkingPattern:
         key = name.strip().lower()
         try:
-            return self._builders[key]()
+            builder = self._builders[key]
         except KeyError as exc:
             supported = ", ".join(sorted(self._builders))
             raise ValueError(f"Unsupported thinking pattern: {name}. Supported: {supported}") from exc
+
+        if key == "pretrained_library":
+            return PretrainedLibraryThinkingPattern.from_config(pattern_config)
+
+        if key == "deep_learning" and pattern_config:
+            # allow override of training hyperparameters per pattern
+            return DeepLearningThinkingPattern(
+                epochs=int(pattern_config.get("epochs", 20)),
+                batch_size=int(pattern_config.get("batch_size", 64)),
+                lr=float(pattern_config.get("lr", 1e-3)),
+            )
+
+        # default behavior for simple constructors
+        return builder()
 
     def supported_patterns(self) -> tuple[str, ...]:
         return tuple(sorted(self._builders.keys()))
 
 
-def create_thinking_pattern(name: str, deep_learning_epochs: int = 20, deep_learning_batch_size: int = 64, deep_learning_lr: float = 1e-3) -> ThinkingPattern:
+def create_thinking_pattern(
+    name: str,
+    pattern_config: dict | None = None,
+    deep_learning_epochs: int = 20,
+    deep_learning_batch_size: int = 64,
+    deep_learning_lr: float = 1e-3,
+) -> ThinkingPattern:
     """Convenience function for one-off pattern construction."""
-    return ThinkingPatternFactory(
+    factory = ThinkingPatternFactory(
         deep_learning_epochs=deep_learning_epochs,
         deep_learning_batch_size=deep_learning_batch_size,
         deep_learning_lr=deep_learning_lr,
-    ).create(name)
+    )
+    return factory.create(name, pattern_config=pattern_config)

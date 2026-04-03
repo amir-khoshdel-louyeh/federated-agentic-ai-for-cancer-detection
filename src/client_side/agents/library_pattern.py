@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
 
-from ..base import ThinkingPattern
+from .base import ThinkingPattern
 
 
 class PretrainedLibraryThinkingPattern(ThinkingPattern):
@@ -32,6 +32,23 @@ class PretrainedLibraryThinkingPattern(ThinkingPattern):
             random_state=random_state,
         )
         self._is_fitted = False
+
+    @classmethod
+    def from_config(cls, config: dict | None = None) -> "PretrainedLibraryThinkingPattern":
+        if not config:
+            return cls()
+
+        params = config.get("agents", {}).get("patterns", {}).get("pretrained_library", {})
+        if not isinstance(params, dict):
+            params = {}
+
+        return cls(
+            max_iter=int(params.get("max_iter", 200)),
+            learning_rate=float(params.get("learning_rate", 0.1)),
+            max_depth=int(params.get("max_depth", 6)),
+            class_weight=params.get("class_weight", "balanced"),
+            random_state=int(params.get("random_state", 42)),
+        )
 
     @property
     def name(self) -> str:

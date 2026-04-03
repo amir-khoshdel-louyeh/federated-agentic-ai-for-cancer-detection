@@ -32,11 +32,19 @@ from .meta_manager import MetaManager
 from .pattern_factory import ThinkingPatternFactory, create_thinking_pattern
 from .pattern_policy import StaticPatternPolicy
 
-EXPECTED_CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
-
-
 
 class HospitalNode(HospitalLifecycleContract):
+    @staticmethod
+    def _expected_cancer_types_from_config(config: dict | None) -> tuple[str, ...]:
+        if not config:
+            return ("BCC", "SCC", "MELANOMA", "AKIEC")
+
+        default_mapping = (config.get("agents", {}).get("patterns", {}).get("default_mapping", {}))
+        if isinstance(default_mapping, dict) and default_mapping:
+            return tuple(sorted({str(k).strip().upper() for k in default_mapping.keys()}))
+
+        return ("BCC", "SCC", "MELANOMA", "AKIEC")
+
     """Central orchestrator for one hospital in the federated workflow."""
 
     def __init__(
@@ -55,6 +63,15 @@ class HospitalNode(HospitalLifecycleContract):
         self.isic_labels_csv = Path(isic_labels_csv) if isic_labels_csv is not None else None
         self.config = config
         self.decision_threshold = float(config.get("decision_threshold", 0.5)) if config else 0.5
+        self.decision_thresholds = {}
+        if config:
+            thresholds = (config.get("training", {}) or {}).get("decision_thresholds", {})
+            if isinstance(thresholds, dict):
+                self.decision_thresholds = {
+                    str(k).strip().upper(): float(v)
+                    for k, v in thresholds.items()
+                    if str(k).strip()
+                }
         # Always pass config to VirtualHospital and LocalDataPipeline
         self.dataset_handler = dataset_handler or VirtualHospital(config=config)
         self.data_pipeline = data_pipeline or LocalDataPipeline(dataset_handler=self.dataset_handler, hospital_id=hospital_id, config=config)
@@ -87,13 +104,21 @@ class HospitalNode(HospitalLifecycleContract):
 
         if self.scope.pattern_policy is not None:
             selected_patterns = self.scope.pattern_policy.select_patterns()
+            pattern_params = (self.config or {}).get("agents", {}).get("pattern_params", {})
             for cancer_type, pattern_name in selected_patterns.items():
-                pattern = create_thinking_pattern(pattern_name)
+                config_for_pattern = pattern_params.get(pattern_name, {}) if isinstance(pattern_params, dict) else {}
+                pattern = create_thinking_pattern(pattern_name, pattern_config=config_for_pattern)
                 self.scope.agent_portfolio.set_pattern(cancer_type, pattern)
 
         self.metrics_store["selected_patterns"] = self.scope.agent_portfolio.selected_patterns()
         self._validate_selected_patterns(self.metrics_store["selected_patterns"])
         self.metrics_store["random_seed"] = int(getattr(self.dataset_handler, "random_state", 0))
+
+    def _decision_threshold_for(self, cancer_type: str) -> float:
+        key = str(cancer_type).strip().upper()
+        if key in self.decision_thresholds:
+            return self.decision_thresholds[key]
+        return self.decision_threshold
         self.metrics_store["split_sizes"] = {
             "train": int(self.scope.data.x_train.shape[0]),
             "val": int(self.scope.data.x_val.shape[0]),
@@ -219,7 +244,11 @@ class HospitalNode(HospitalLifecycleContract):
 
             # Compute and store per-agent metrics for test split
             if len(y_test) > 0:
-                metrics = self._compute_binary_metrics(y_test, test_probs, threshold=self.decision_threshold)
+                metrics = self._compute_binary_metrics(
+                    y_test,
+                    test_probs,
+                    threshold=self._decision_threshold_for(cancer_type),
+                )
                 per_agent_metrics[agent.name] = metrics
 
         # Convert all predictions to lists for JSON serialization
@@ -255,8 +284,16 @@ class HospitalNode(HospitalLifecycleContract):
             x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
             val_probs = agent.predict_proba(x_val)
             test_probs = agent.predict_proba(x_test)
-            val_metrics[f"{cancer_type.lower()}::{pattern_name}"] = self._compute_binary_metrics(y_val, val_probs, threshold=self.decision_threshold)
-            test_metrics[f"{cancer_type.lower()}::{pattern_name}"] = self._compute_binary_metrics(y_test, test_probs, threshold=self.decision_threshold)
+            val_metrics[f"{cancer_type.lower()}::{pattern_name}"] = self._compute_binary_metrics(
+                y_val,
+                val_probs,
+                threshold=self._decision_threshold_for(cancer_type),
+            )
+            test_metrics[f"{cancer_type.lower()}::{pattern_name}"] = self._compute_binary_metrics(
+                y_test,
+                test_probs,
+                threshold=self._decision_threshold_for(cancer_type),
+            )
 
         for cancer_type, pattern_name in selected_patterns.items():
             prediction_key = f"{cancer_type.lower()}::{pattern_name}"
@@ -463,17 +500,20 @@ class HospitalNode(HospitalLifecycleContract):
             raise RuntimeError("HospitalNode requires an agent portfolio.")
 
         cancer_types = tuple(self.scope.agent_portfolio.cancer_types)
-        if len(cancer_types) != 4:
-            raise ValueError("Agent portfolio must expose exactly 4 cancer agents.")
-        if set(cancer_types) != set(EXPECTED_CANCER_TYPES):
+        expected = self._expected_cancer_types_from_config(self.config)
+        if len(cancer_types) != len(expected):
+            raise ValueError(
+                f"Agent portfolio must expose exactly {len(expected)} cancer agents."
+            )
+        if set(cancer_types) != set(expected):
             raise ValueError(
                 "Agent portfolio cancer types must be exactly: "
-                f"{', '.join(EXPECTED_CANCER_TYPES)}"
+                f"{', '.join(expected)}"
             )
 
-    @staticmethod
-    def _validate_selected_patterns(selected_patterns: dict[str, str]) -> None:
-        missing = [c for c in EXPECTED_CANCER_TYPES if c not in selected_patterns]
+    def _validate_selected_patterns(self, selected_patterns: dict[str, str]) -> None:
+        expected = self._expected_cancer_types_from_config(self.config)
+        missing = [c for c in expected if c not in selected_patterns]
         if missing:
             raise ValueError(
                 "Selected patterns missing required cancer types: "
@@ -504,8 +544,8 @@ class HospitalNode(HospitalLifecycleContract):
         """
         evaluation = dict(self.metrics_store.get("evaluation", {}))
         if for_training:
-            # Fill per_agent with dummy values for all expected cancer types
-            dummy_metrics = {ct: {"accuracy": 0.0, "f1": 0.0, "auc": 0.0, "sensitivity": 0.0, "specificity": 0.0} for ct in EXPECTED_CANCER_TYPES}
+            expected = self._expected_cancer_types_from_config(self.config)
+            dummy_metrics = {ct: {"accuracy": 0.0, "f1": 0.0, "auc": 0.0, "sensitivity": 0.0, "specificity": 0.0} for ct in expected}
             evaluation["test"] = dummy_metrics
         output = build_hospital_output(
             hospital_id=self.hospital_id,
