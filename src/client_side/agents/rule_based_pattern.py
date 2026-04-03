@@ -37,11 +37,13 @@ class RuleBasedThinkingPattern(ThinkingPattern):
     ) -> None:
         self.threshold = threshold
         self.weights = weights or {
-            'asymmetry': 0.30,
-            'border': 0.25,
-            'color': 0.20,
-            'diameter': 0.15,
+            'asymmetry': 0.28,
+            'border': 0.22,
+            'color': 0.18,
+            'diameter': 0.14,
             'age': 0.10,
+            'sex': 0.04,
+            'site': 0.04,
         }
         self.scale = scale
 
@@ -62,6 +64,8 @@ class RuleBasedThinkingPattern(ThinkingPattern):
         color = x[:, 2]
         diameter = x[:, 3]
         age = x[:, 4]
+        sex = x[:, 5] if x.shape[1] > 5 else 0.5
+        site = x[:, 6] if x.shape[1] > 6 else 0.5
 
         score = (
             self.weights.get('asymmetry', 0.0) * asymmetry
@@ -69,6 +73,8 @@ class RuleBasedThinkingPattern(ThinkingPattern):
             + self.weights.get('color', 0.0) * color
             + self.weights.get('diameter', 0.0) * diameter
             + self.weights.get('age', 0.0) * age
+            + self.weights.get('sex', 0.0) * sex
+            + self.weights.get('site', 0.0) * site
         )
 
         # Map rule score to a smooth probability while keeping deterministic behavior.

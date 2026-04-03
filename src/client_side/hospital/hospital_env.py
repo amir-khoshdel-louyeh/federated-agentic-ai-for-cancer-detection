@@ -310,12 +310,17 @@ class VirtualHospital:
         else:
             out["is_male"] = 0.5
 
+        # Keep explicit sex feature for interpretability and model leverage.
+        out["sex_encoded"] = out["is_male"]
+
         site_col = next((c for c in site_candidates if c in src.columns), None)
         if site_col:
             site_codes = src[site_col].astype("category").cat.codes
             site_codes = site_codes.replace(-1, site_codes[site_codes >= 0].median() if (site_codes >= 0).any() else 0)
+            out["site_code"] = site_codes.astype(float)
             out["site_scaled"] = self._min_max_scale(site_codes)
         else:
+            out["site_code"] = self._deterministic_feature(out["image_id"], salt="site_code")
             out["site_scaled"] = self._deterministic_feature(out["image_id"], salt="site")
 
         return out

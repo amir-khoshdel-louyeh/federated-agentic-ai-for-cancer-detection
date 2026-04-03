@@ -59,6 +59,7 @@ class RuleClinicalThinkingPattern(ThinkingPattern):
         diameter = x[:, 3]
         age = x[:, 4]
         sex = x[:, 5]  # 0=F,1=M assumed
+        site = x[:, 6] if x.shape[1] > 6 else 0.5
 
         base_score = (
             self.weights.get('asymmetry', 0.0) * asymmetry
@@ -70,6 +71,11 @@ class RuleClinicalThinkingPattern(ThinkingPattern):
         # age-based safety rule: reduce cancer probability for pediatric unless very high score.
         age_factor = np.where(age < self.age_threshold, self.pediatric_penalty, 1.0)
         score = base_score * age_factor
+
+        # sex-trigger factor and site propensity adjustment can modulate final clinical risk
+        sex_factor = 1.0 + ((sex - 0.5) * 0.1)
+        site_factor = 1.0 + ((site - 0.5) * 0.1)
+        score *= sex_factor * site_factor
 
         # constrain to 0..1 via sigmoid
         prob = 1.0 / (1.0 + np.exp(-self.scale * (score - 0.5)))

@@ -61,7 +61,7 @@ augmentation:
   num_augmented_copies: 0
 
 sampling:
-  total_samples: 5000
+  total_samples: 10000
   random_seed: 42
 
 # ========================
@@ -79,7 +79,7 @@ federation:
   aggregation_algorithm: fedprox
 
   fedprox:
-    mu: 0.1
+    mu: 0.5
 
   adaptive:
     alpha: 0.5
@@ -123,11 +123,13 @@ agents:
       rule_based:
         threshold: 0.58
         weights:
-          asymmetry: 0.30
-          border: 0.25
-          color: 0.20
-          diameter: 0.15
+          asymmetry: 0.28
+          border: 0.22
+          color: 0.18
+          diameter: 0.14
           age: 0.10
+          sex: 0.04
+          site: 0.04
         scale: 10.0
 
       rule_based_strict:
@@ -153,7 +155,7 @@ agents:
       pretrained_library:
         max_iter: 200
         learning_rate: 0.1
-        max_depth: 6
+        max_depth: 8
         class_weight: balanced
         random_state: 42
 
@@ -164,7 +166,7 @@ agents:
 # ========================
 
 finalizer:
-  threshold: 0.5
+  threshold: 0.3
 
 # ========================
 # META-AGENT CONTROL
@@ -212,12 +214,12 @@ tracking:
 # ========================
 
 training:
-  max_local_samples: 1000
-  rebalance_method: smote
+  max_local_samples: 2000
+  rebalance_method: oversample
   imbalance_ratio_threshold: 5
   decision_threshold: 0.3
   decision_thresholds:
-    BCC: 0.2
+    BCC: 0.3
     SCC: 0.3
     MELANOMA: 0.3
     AKIEC: 0.3

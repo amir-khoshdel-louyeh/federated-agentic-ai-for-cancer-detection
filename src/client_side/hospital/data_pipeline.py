@@ -127,7 +127,6 @@ class LocalDataPipeline:
 
         return self._to_local_data(splits)
 
-    @staticmethod
     def _to_local_data(self, splits: HospitalSplits) -> LocalHospitalData:
         bundle = HospitalDataBundle(
             x_train=splits.x_train,
