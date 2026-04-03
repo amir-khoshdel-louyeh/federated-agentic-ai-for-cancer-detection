@@ -7,12 +7,12 @@ from typing import Literal
 import numpy as np
 
 from .contracts import HospitalDataBundle
+from .config_helpers import get_cancer_types
 from .hospital_env import HospitalSplits, VirtualHospital
 from .augmentations import augment_dataset
 from ..pre_processing.pipeline import PreprocessingPipeline
 
 SPLIT_NAMES = ("train", "val", "test")
-CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class LocalHospitalData:
     cancer_train: np.ndarray
     cancer_val: np.ndarray
     cancer_test: np.ndarray
+    cancer_types: tuple[str, ...]
 
     def filter_for_cancer(
         self,
@@ -32,7 +33,7 @@ class LocalHospitalData:
         positive_only: bool = False,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Return split features with one-vs-rest labels or only positive-class rows."""
-        normalized = _normalize_cancer_type(cancer_type)
+        normalized = _normalize_cancer_type(cancer_type, self.cancer_types)
         x_split, _ = self._split_xy(split)
         split_labels = self._split_cancer_labels(split)
 
@@ -71,6 +72,7 @@ class LocalDataPipeline:
         self.config = config
         self.hospital_id = hospital_id
         self.hospital_ids = hospital_ids
+        self._cancer_types = get_cancer_types(config)
         # Always pass config to VirtualHospital
         self.dataset_handler = dataset_handler or VirtualHospital(config=config)
 
@@ -126,7 +128,7 @@ class LocalDataPipeline:
         return self._to_local_data(splits)
 
     @staticmethod
-    def _to_local_data(splits: HospitalSplits) -> LocalHospitalData:
+    def _to_local_data(self, splits: HospitalSplits) -> LocalHospitalData:
         bundle = HospitalDataBundle(
             x_train=splits.x_train,
             y_train=splits.y_train,
@@ -141,11 +143,12 @@ class LocalDataPipeline:
             cancer_train=splits.cancer_train,
             cancer_val=splits.cancer_val,
             cancer_test=splits.cancer_test,
+            cancer_types=self._cancer_types,
         )
 
 
-def _normalize_cancer_type(cancer_type: str) -> str:
+def _normalize_cancer_type(cancer_type: str, cancer_types: tuple[str, ...]) -> str:
     normalized = cancer_type.strip().upper()
-    if normalized not in CANCER_TYPES:
-        raise ValueError(f"Unsupported cancer type: {cancer_type}. Supported: {', '.join(CANCER_TYPES)}")
+    if normalized not in cancer_types:
+        raise ValueError(f"Unsupported cancer type: {cancer_type}. Supported: {', '.join(cancer_types)}")
     return normalized

@@ -6,6 +6,7 @@ from typing import Any, Mapping
 import numpy as np
 import torch
 
+from src.client_side.hospital.config_helpers import get_cancer_types
 from .contracts import AggregationOutput, BinaryMetrics, LocalHospitalUpdatePayload
 from .weighting import (
     build_adaptive_weights,
@@ -22,7 +23,7 @@ METRIC_KEYS: tuple[str, ...] = (
     "specificity",
 )
 
-CANCER_TYPES: tuple[str, ...] = ("BCC", "SCC", "MELANOMA", "AKIEC")
+CANCER_TYPES: tuple[str, ...] = get_cancer_types(None)
 
 
 
@@ -272,6 +273,10 @@ class AdaptiveAggregator:
     gamma: float = 0.2
     auc_weight: float = 0.7
     f1_weight: float = 0.3
+    lifecycle_penalty: float = 0.35
+    warning_penalty_per_item: float = 0.05
+    min_reliability_score: float = 0.0
+    cancer_types: tuple[str, ...] = CANCER_TYPES
 
     @property
     def name(self) -> str:
@@ -295,7 +300,12 @@ class AdaptiveAggregator:
             auc_weight=self.auc_weight,
             f1_weight=self.f1_weight,
         )
-        reliability_weights = compute_reliability_scores(local_updates)
+        reliability_weights = compute_reliability_scores(
+            local_updates,
+            lifecycle_penalty=self.lifecycle_penalty,
+            warning_penalty_per_item=self.warning_penalty_per_item,
+            min_score=self.min_reliability_score,
+        )
 
         hospital_weights, component_weights = build_adaptive_weights(
             sample_size_weights=sample_size_weights,
@@ -317,7 +327,7 @@ class AdaptiveAggregator:
 
         per_cancer_weights: dict[str, dict[str, float]] = {}
         per_cancer_global_metrics: dict[str, BinaryMetrics] = {}
-        for cancer_type in CANCER_TYPES:
+        for cancer_type in self.cancer_types:
             cancer_quality_weights = _extract_cancer_quality_scores(
                 local_updates,
                 cancer_type=cancer_type,

@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+from .config_helpers import get_malignant_ham, get_malignant_isic
+
 
 @dataclass
 class HospitalSplits:
@@ -221,7 +223,8 @@ class VirtualHospital:
         image_col = "image_id" if "image_id" in df.columns else df.columns[0]
 
         dx = df["dx"].astype(str).str.lower()
-        target = dx.isin(MALIGNANT_HAM).astype(int)
+        malignant_ham = get_malignant_ham(self.config)
+        target = dx.isin(malignant_ham).astype(int)
         cancer_type = dx.map(HAM_TO_CANCER_TYPE).fillna("OTHER")
         base = pd.DataFrame(
             {
@@ -236,7 +239,8 @@ class VirtualHospital:
         df = pd.read_csv(labels_csv)
         image_col = "image" if "image" in df.columns else df.columns[0]
 
-        present_labels = [label for label in MALIGNANT_ISIC if label in df.columns]
+        malignant_isic = get_malignant_isic(self.config)
+        present_labels = [label for label in malignant_isic if label in df.columns]
         if not present_labels:
             raise ValueError("ISIC 2019 labels CSV must contain at least one malignant class column.")
 

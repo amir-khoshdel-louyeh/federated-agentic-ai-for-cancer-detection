@@ -9,13 +9,19 @@ class RuleBasedThinkingPattern(ThinkingPattern):
     def save_model(self, file_path: str) -> None:
         import json
         with open(file_path + '.json', 'w') as f:
-            json.dump({'threshold': self.threshold}, f)
+            json.dump({
+                'threshold': self.threshold,
+                'weights': self.weights,
+                'scale': self.scale,
+            }, f)
 
     def load_model(self, file_path: str) -> None:
         import json
         with open(file_path + '.json', 'r') as f:
             data = json.load(f)
             self.threshold = data.get('threshold', self.threshold)
+            self.weights = data.get('weights', self.weights)
+            self.scale = data.get('scale', self.scale)
     """
     Deterministic baseline inspired by simple ABCD-style lesion heuristics.
 
@@ -23,8 +29,21 @@ class RuleBasedThinkingPattern(ThinkingPattern):
     [asymmetry, border_irregularity, color_variegation, diameter_mm_scaled, age_scaled, ...]
     """
 
-    def __init__(self, threshold: float = 0.58) -> None:
+    def __init__(
+        self,
+        threshold: float = 0.58,
+        weights: dict[str, float] | None = None,
+        scale: float = 10.0,
+    ) -> None:
         self.threshold = threshold
+        self.weights = weights or {
+            'asymmetry': 0.30,
+            'border': 0.25,
+            'color': 0.20,
+            'diameter': 0.15,
+            'age': 0.10,
+        }
+        self.scale = scale
 
     @property
     def name(self) -> str:
@@ -45,24 +64,23 @@ class RuleBasedThinkingPattern(ThinkingPattern):
         age = x[:, 4]
 
         score = (
-            0.30 * asymmetry
-            + 0.25 * border
-            + 0.20 * color
-            + 0.15 * diameter
-            + 0.10 * age
+            self.weights.get('asymmetry', 0.0) * asymmetry
+            + self.weights.get('border', 0.0) * border
+            + self.weights.get('color', 0.0) * color
+            + self.weights.get('diameter', 0.0) * diameter
+            + self.weights.get('age', 0.0) * age
         )
 
         # Map rule score to a smooth probability while keeping deterministic behavior.
-        prob = 1.0 / (1.0 + np.exp(-10.0 * (score - self.threshold)))
+        prob = 1.0 / (1.0 + np.exp(-self.scale * (score - self.threshold)))
         return np.clip(prob, 0.0, 1.0)
 
 
 class RuleBasedStrictThinkingPattern(RuleBasedThinkingPattern):
-        # Inherits save/load from RuleBasedThinkingPattern
     """Stricter deterministic heuristic with a higher risk threshold."""
 
-    def __init__(self) -> None:
-        super().__init__(threshold=0.68)
+    def __init__(self, threshold: float = 0.68) -> None:
+        super().__init__(threshold=threshold)
 
     @property
     def name(self) -> str:

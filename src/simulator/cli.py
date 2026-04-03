@@ -71,12 +71,11 @@ def main():
 	mode = choose_agent_mode()
 
 	if mode == "library":
+		from src.client_side.hospital.config_helpers import get_cancer_types
 		config.setdefault("agents", {}).setdefault("patterns", {})
+		cancer_types = get_cancer_types(config)
 		config["agents"]["patterns"]["default_mapping"] = {
-			"BCC": "pretrained_library",
-			"SCC": "pretrained_library",
-			"MELANOMA": "pretrained_library",
-			"AKIEC": "pretrained_library",
+			cancer_type: "pretrained_library" for cancer_type in cancer_types
 		}
 		logging.info("Using pretrained library agent strategy for all specialists.")
 	else:

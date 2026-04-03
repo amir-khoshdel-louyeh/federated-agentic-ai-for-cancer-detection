@@ -13,43 +13,61 @@ from ..agents import (
     SkinCancerAgent,
     ThinkingPattern,
 )
+from .config_helpers import get_cancer_types
 from .pattern_factory import create_thinking_pattern
-
-CANCER_TYPES = ("BCC", "SCC", "MELANOMA", "AKIEC")
 
 
 class AgentPortfolio:
 
+    def __init__(
+        self,
+        initial_patterns: Mapping[str, ThinkingPattern] | None = None,
+        cancer_types: tuple[str, ...] | None = None,
+    ) -> None:
+        self._cancer_types = tuple(cancer_types) if cancer_types else get_cancer_types(None)
+        self._validate_cancer_types(self._cancer_types)
+        patterns = self._normalize_initial_patterns(initial_patterns)
+        agent_class_map = {
+            "BCC": BCCAgent,
+            "SCC": SCCAgent,
+            "MELANOMA": MelanomaAgent,
+            "AKIEC": AKIECAgent,
+        }
+
+        self._agents = {}
+        for cancer_type in self._cancer_types:
+            try:
+                cls = agent_class_map[cancer_type]
+            except KeyError as exc:
+                raise ValueError(f"No agent class known for cancer type: {cancer_type}") from exc
+            self._agents[cancer_type] = cls(thinking_pattern=patterns[cancer_type])
+
     def save_all_models(self, out_dir: str, hospital_id: str) -> None:
         import os
         os.makedirs(out_dir, exist_ok=True)
-        for cancer_type in CANCER_TYPES:
+        for cancer_type in self._cancer_types:
             agent = self._agents[cancer_type]
             pattern = agent._thinking_pattern
             file_base = os.path.join(out_dir, f"{hospital_id}_{cancer_type}_{pattern.name}")
             pattern.save_model(file_base)
-    
+
     def load_all_models(self, out_dir: str, hospital_id: str) -> None:
         import os
-        for cancer_type in CANCER_TYPES:
+        for cancer_type in self._cancer_types:
             agent = self._agents[cancer_type]
             pattern = agent._thinking_pattern
             file_base = os.path.join(out_dir, f"{hospital_id}_{cancer_type}_{pattern.name}")
             pattern.load_model(file_base)
-    """Hospital-local portfolio with exactly four fixed cancer agents."""
 
-    def __init__(self, initial_patterns: Mapping[str, ThinkingPattern] | None = None) -> None:
-        patterns = self._normalize_initial_patterns(initial_patterns)
-        self._agents: dict[str, SkinCancerAgent] = {
-            "BCC": BCCAgent(thinking_pattern=patterns["BCC"]),
-            "SCC": SCCAgent(thinking_pattern=patterns["SCC"]),
-            "MELANOMA": MelanomaAgent(thinking_pattern=patterns["MELANOMA"]),
-            "AKIEC": AKIECAgent(thinking_pattern=patterns["AKIEC"]),
-        }
+    def _validate_cancer_types(self, cancer_types: tuple[str, ...]) -> None:
+        if not cancer_types:
+            raise ValueError("cancer_types must not be empty")
+        if len(set(cancer_types)) != len(cancer_types):
+            raise ValueError("cancer_types contains duplicate entries")
 
     @property
-    def cancer_types(self) -> tuple[str, str, str, str]:
-        return CANCER_TYPES
+    def cancer_types(self) -> tuple[str, ...]:
+        return self._cancer_types
 
     def get_agent(self, cancer_type: str) -> SkinCancerAgent:
         key = self._normalize_cancer_type(cancer_type)
@@ -123,38 +141,35 @@ class AgentPortfolio:
             except Exception:
                 continue
 
-    @staticmethod
-    def _normalize_cancer_type(cancer_type: str) -> str:
+    def _normalize_cancer_type(self, cancer_type: str) -> str:
         key = cancer_type.strip().upper()
-        if key not in CANCER_TYPES:
+        if key not in self._cancer_types:
             raise ValueError(f"Unsupported cancer type: {cancer_type}")
         return key
 
-    @staticmethod
     def _normalize_initial_patterns(
+        self,
         initial_patterns: Mapping[str, ThinkingPattern] | None,
     ) -> dict[str, ThinkingPattern]:
         if initial_patterns is None:
             return {
-                "BCC": create_thinking_pattern("rule_based"),
-                "SCC": create_thinking_pattern("rule_based"),
-                "MELANOMA": create_thinking_pattern("rule_based"),
-                "AKIEC": create_thinking_pattern("rule_based"),
+                cancer_type: create_thinking_pattern("rule_based")
+                for cancer_type in self._cancer_types
             }
 
         normalized: dict[str, ThinkingPattern] = {}
         for cancer_type, pattern in initial_patterns.items():
             key = cancer_type.strip().upper()
-            if key not in CANCER_TYPES:
+            if key not in self._cancer_types:
                 raise ValueError(f"Unsupported cancer type in initial patterns: {cancer_type}")
             normalized[key] = pattern
 
-        missing = [ct for ct in CANCER_TYPES if ct not in normalized]
-        extra = [ct for ct in normalized if ct not in CANCER_TYPES]
+        missing = [ct for ct in self._cancer_types if ct not in normalized]
+        extra = [ct for ct in normalized if ct not in self._cancer_types]
         if missing or extra:
             raise ValueError(
                 "Initial patterns must define exactly these cancer types: "
-                f"{', '.join(CANCER_TYPES)}"
+                f"{', '.join(self._cancer_types)}"
             )
 
         return normalized

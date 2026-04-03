@@ -137,7 +137,8 @@ def train_system(config, hospitals, save_history=False, save_models=False):
     """
     import json
     from pathlib import Path
-    aggregation_name = config["federation"]["aggregation_algorithm"]
+    federation_config = config.get("federation", {})
+    aggregation_name = str(federation_config.get("aggregation_algorithm", "fedprox")).strip().lower()
     num_hospitals = len(hospitals)
     if num_hospitals == 1:
         if aggregation_name != "no_operation":
@@ -145,7 +146,28 @@ def train_system(config, hospitals, save_history=False, save_models=False):
         aggregation_name = "no_operation"
     elif aggregation_name == "no_operation":
         raise ValueError("'no_operation' aggregation can only be used with a single hospital.")
-    orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name)
+    # Build aggregator args from config for adaptive or fedprox behavior
+    aggregator_kwargs = {}
+
+    if aggregation_name == "fedprox":
+        aggregator_kwargs["mu"] = float(federation_config.get("fedprox", {}).get("mu", 0.1))
+
+    if aggregation_name == "adaptive":
+        adaptive_cfg = federation_config.get("adaptive", {})
+        from src.client_side.hospital.config_helpers import get_cancer_types
+        aggregator_kwargs.update({
+            "alpha": float(adaptive_cfg.get("alpha", 0.5)),
+            "beta": float(adaptive_cfg.get("beta", 0.3)),
+            "gamma": float(adaptive_cfg.get("gamma", 0.2)),
+            "auc_weight": float(adaptive_cfg.get("auc_weight", 0.75)),
+            "f1_weight": float(adaptive_cfg.get("f1_weight", 0.25)),
+            "lifecycle_penalty": float(adaptive_cfg.get("lifecycle_penalty", 0.35)),
+            "warning_penalty_per_item": float(adaptive_cfg.get("warning_penalty_per_item", 0.05)),
+            "min_reliability_score": float(adaptive_cfg.get("min_reliability_score", 0.0)),
+            "cancer_types": get_cancer_types(config),
+        })
+
+    orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name, **aggregator_kwargs)
 
     num_epochs = int(config.get("simulation", {}).get("num_epoch", 1))
     num_rounds = int(config.get("simulation", {}).get("num_rounds", 1))

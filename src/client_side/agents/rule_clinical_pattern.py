@@ -8,9 +8,22 @@ from .base import ThinkingPattern
 class RuleClinicalThinkingPattern(ThinkingPattern):
     """Clinical safety filter based on age/sex/site and lesion features."""
 
-    def __init__(self, age_threshold: int = 30, pediatric_penalty: float = 0.6):
+    def __init__(
+        self,
+        age_threshold: int = 30,
+        pediatric_penalty: float = 0.6,
+        weights: dict[str, float] | None = None,
+        scale: float = 10.0,
+    ):
         self.age_threshold = age_threshold
         self.pediatric_penalty = pediatric_penalty
+        self.weights = weights or {
+            'asymmetry': 0.35,
+            'border': 0.25,
+            'color': 0.2,
+            'diameter': 0.2,
+        }
+        self.scale = scale
 
     @property
     def name(self) -> str:
@@ -47,14 +60,19 @@ class RuleClinicalThinkingPattern(ThinkingPattern):
         age = x[:, 4]
         sex = x[:, 5]  # 0=F,1=M assumed
 
-        base_score = 0.35 * asymmetry + 0.25 * border + 0.2 * color + 0.2 * diameter
+        base_score = (
+            self.weights.get('asymmetry', 0.0) * asymmetry
+            + self.weights.get('border', 0.0) * border
+            + self.weights.get('color', 0.0) * color
+            + self.weights.get('diameter', 0.0) * diameter
+        )
 
         # age-based safety rule: reduce cancer probability for pediatric unless very high score.
         age_factor = np.where(age < self.age_threshold, self.pediatric_penalty, 1.0)
         score = base_score * age_factor
 
         # constrain to 0..1 via sigmoid
-        prob = 1.0 / (1.0 + np.exp(-10.0 * (score - 0.5)))
+        prob = 1.0 / (1.0 + np.exp(-self.scale * (score - 0.5)))
         return np.clip(prob, 0.0, 1.0)
 
     def predict_uncertainty(self, x: np.ndarray, n_samples: int = 25) -> np.ndarray:

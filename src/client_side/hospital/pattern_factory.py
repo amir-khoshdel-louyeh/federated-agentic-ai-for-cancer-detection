@@ -49,6 +49,34 @@ class ThinkingPatternFactory:
                 lr=float(pattern_config.get("lr", 1e-3)),
             )
 
+        if key == "rule_based":
+            threshold = float(pattern_config.get("threshold", 0.58)) if pattern_config else 0.58
+            return RuleBasedThinkingPattern(threshold=threshold)
+
+        if key == "rule_based_strict":
+            threshold = float(pattern_config.get("threshold", 0.68)) if pattern_config else 0.68
+            return RuleBasedStrictThinkingPattern(threshold=threshold)
+
+        if key == "rule_clinical":
+            if pattern_config:
+                age_threshold = int(pattern_config.get("age_threshold", 30))
+                pediatric_penalty = float(pattern_config.get("pediatric_penalty", 0.6))
+            else:
+                age_threshold = 30
+                pediatric_penalty = 0.6
+            return RuleClinicalThinkingPattern(age_threshold=age_threshold, pediatric_penalty=pediatric_penalty)
+
+        if key == "logistic":
+            if pattern_config:
+                return LogisticThinkingPattern(
+                    C=float(pattern_config.get("C", 1.0)),
+                    penalty=str(pattern_config.get("penalty", "l2")),
+                    class_weight=pattern_config.get("class_weight", "balanced"),
+                    max_iter=int(pattern_config.get("max_iter", 1000)),
+                    random_state=int(pattern_config.get("random_state", 42)),
+                )
+            return LogisticThinkingPattern()
+
         # default behavior for simple constructors
         return builder()
 

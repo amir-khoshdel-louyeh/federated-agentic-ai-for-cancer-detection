@@ -4,13 +4,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Optional
 
+from .config_helpers import get_cancer_types
 from .pattern_factory import ThinkingPatternFactory
 
 ValidationScoreByPattern = Mapping[str, Mapping[str, float]]
 
 def _cancer_types_from_mapping(mapping: Mapping[str, str] | None) -> tuple[str, ...]:
     if not mapping:
-        return ("BCC", "SCC", "MELANOMA", "AKIEC")
+        return get_cancer_types(None)
     return tuple(sorted({key.strip().upper() for key in mapping.keys()}))
 
 
@@ -18,16 +19,15 @@ def _extract_default_mapping_from_config(config: Optional[dict]) -> dict:
     # Try to extract from config['agents']['patterns']['default_mapping']
     if config is not None:
         try:
-            return dict(config["agents"]["patterns"]["default_mapping"])
+            mapping = dict(config["agents"]["patterns"]["default_mapping"])
+            if mapping:
+                return mapping
         except Exception:
             pass
-    # Fallback to legacy hardcoded mapping if not found
-    return {
-        "BCC": "rule_based",
-        "SCC": "bayesian",
-        "MELANOMA": "deep_learning",
-        "AKIEC": "rule_based_strict",
-    }
+
+    cancer_types = get_cancer_types(config)
+    # fallback to simple rule_based initialization for each configured cancer type
+    return {ct: "rule_based" for ct in cancer_types}
 
 @dataclass
 class StaticPatternPolicy:
@@ -39,6 +39,7 @@ class StaticPatternPolicy:
     hospital_overrides: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     def __post_init__(self):
+        self.cancer_types = get_cancer_types(self.config)
         self.default_mapping = _extract_default_mapping_from_config(self.config)
 
     def select_patterns(self) -> dict[str, str]:
@@ -48,7 +49,7 @@ class StaticPatternPolicy:
         for cancer_type, pattern_name in override.items():
             resolved[cancer_type.strip().upper()] = pattern_name.strip().lower()
 
-        self._validate_mapping(resolved)
+        self._validate_mapping(resolved, expected_cancer_types=tuple(self.cancer_types))
         return dict(resolved)
 
     @staticmethod
