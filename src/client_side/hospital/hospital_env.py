@@ -6,7 +6,7 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
 from .config_helpers import get_malignant_ham, get_malignant_isic
 
@@ -48,6 +48,54 @@ class VirtualHospital:
             self.random_state = config.get("sampling", {}).get("random_seed", 42)
         else:
             self.random_state = 42
+
+    def _resolve_stratify_labels(
+        self,
+        y: np.ndarray,
+        cancer_types: np.ndarray,
+        stratify: bool,
+    ) -> np.ndarray | None:
+        """Prefer stratifying by cancer type, fall back to malignancy when needed."""
+        if not stratify:
+            return None
+
+        cancer_labels = np.asarray(cancer_types, dtype=str)
+        if cancer_labels.size > 0 and len(np.unique(cancer_labels)) > 1:
+            return cancer_labels
+
+        if y is not None and len(np.unique(y)) > 1:
+            return y
+
+        return None
+
+    def _split_with_stratification(
+        self,
+        *arrays,
+        test_size: float,
+        stratify: np.ndarray | None,
+        random_state: int,
+    ):
+        if stratify is None:
+            return train_test_split(*arrays, test_size=test_size, random_state=random_state)
+
+        try:
+            return train_test_split(
+                *arrays,
+                test_size=test_size,
+                stratify=stratify,
+                random_state=random_state,
+            )
+        except ValueError:
+            # Fall back to malignancy stratification or random split if cancer type stratification fails.
+            fallback = self._resolve_stratify_labels(np.asarray(arrays[1], dtype=np.int64), np.asarray(arrays[3], dtype=str), False)
+            if fallback is not None:
+                return train_test_split(
+                    *arrays,
+                    test_size=test_size,
+                    stratify=fallback,
+                    random_state=random_state,
+                )
+            return train_test_split(*arrays, test_size=test_size, random_state=random_state)
 
     def load(
         self,
@@ -114,39 +162,31 @@ class VirtualHospital:
             if holdout_test <= 0.0 or holdout_test >= 1.0:
                 raise ValueError("data_split.holdout_test must be in (0,1)")
 
-            if stratify and len(np.unique(y)) > 1:
-                x_rest, x_test, y_rest, y_test, ids_rest, ids_test, cancer_rest, cancer_test = train_test_split(
-                    x,
-                    y,
-                    ids,
-                    cancer_types,
-                    test_size=holdout_test,
-                    stratify=y,
-                    random_state=self.random_state,
-                )
-            else:
-                n = len(x)
-                idx = np.arange(n)
-                rng = np.random.default_rng(self.random_state)
-                rng.shuffle(idx)
-                test_count = max(1, int(n * holdout_test))
-                test_idx = idx[:test_count]
-                rest_idx = idx[test_count:]
-                x_rest, x_test = x[rest_idx], x[test_idx]
-                y_rest, y_test = y[rest_idx], y[test_idx]
-                ids_rest, ids_test = ids[rest_idx], ids[test_idx]
-                cancer_rest, cancer_test = cancer_types[rest_idx], cancer_types[test_idx]
+            stratify_labels = self._resolve_stratify_labels(y, cancer_types, stratify)
+            x_rest, x_test, y_rest, y_test, ids_rest, ids_test, cancer_rest, cancer_test = self._split_with_stratification(
+                x,
+                y,
+                ids,
+                cancer_types,
+                test_size=holdout_test,
+                stratify=stratify_labels,
+                random_state=self.random_state,
+            )
 
-            from sklearn.model_selection import StratifiedKFold
             if current_fold < 0 or current_fold >= k_folds:
                 raise ValueError(f"current_fold must be between 0 and k_folds-1 ({k_folds-1})")
 
-            if stratify and len(np.unique(y_rest)) > 1:
-                skf = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=self.random_state)
-                fold_splits = list(skf.split(x_rest, y_rest))
+            stratify_labels_rest = self._resolve_stratify_labels(y_rest, cancer_rest, stratify)
+            if stratify_labels_rest is not None:
+                try:
+                    skf = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=self.random_state)
+                    fold_splits = list(skf.split(x_rest, stratify_labels_rest))
+                except ValueError:
+                    skf = KFold(n_splits=k_folds, shuffle=True, random_state=self.random_state)
+                    fold_splits = list(skf.split(x_rest))
             else:
-                skf = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=self.random_state)
-                fold_splits = list(skf.split(x_rest, y_rest))
+                skf = KFold(n_splits=k_folds, shuffle=True, random_state=self.random_state)
+                fold_splits = list(skf.split(x_rest))
 
             train_idx, val_idx = fold_splits[current_fold]
 
@@ -165,27 +205,48 @@ class VirtualHospital:
             test_ratio /= total
 
             # stratified split by binary target (malignancy) if possible
-            if stratify and len(np.unique(y)) > 1:
-                x_temp, x_test, y_temp, y_test, ids_temp, ids_test, cancer_temp, cancer_test = train_test_split(
+            stratify_labels = self._resolve_stratify_labels(y, cancer_types, stratify)
+            if stratify_labels is not None:
+                x_temp, x_test, y_temp, y_test, ids_temp, ids_test, cancer_temp, cancer_test = self._split_with_stratification(
                     x,
                     y,
                     ids,
                     cancer_types,
                     test_size=test_ratio,
-                    stratify=y,
+                    stratify=stratify_labels,
                     random_state=self.random_state,
                 )
-                # split remaining into train/val
                 val_adj = val_ratio / (train_ratio + val_ratio)
-                x_train, x_val, y_train, y_val, ids_train, ids_val, cancer_train, cancer_val = train_test_split(
-                    x_temp,
-                    y_temp,
-                    ids_temp,
-                    cancer_temp,
-                    test_size=val_adj,
-                    stratify=y_temp,
-                    random_state=self.random_state,
-                )
+                stratify_labels_temp = self._resolve_stratify_labels(y_temp, cancer_temp, stratify)
+                if stratify_labels_temp is not None:
+                    try:
+                        x_train, x_val, y_train, y_val, ids_train, ids_val, cancer_train, cancer_val = train_test_split(
+                            x_temp,
+                            y_temp,
+                            ids_temp,
+                            cancer_temp,
+                            test_size=val_adj,
+                            stratify=stratify_labels_temp,
+                            random_state=self.random_state,
+                        )
+                    except ValueError:
+                        x_train, x_val, y_train, y_val, ids_train, ids_val, cancer_train, cancer_val = train_test_split(
+                            x_temp,
+                            y_temp,
+                            ids_temp,
+                            cancer_temp,
+                            test_size=val_adj,
+                            random_state=self.random_state,
+                        )
+                else:
+                    x_train, x_val, y_train, y_val, ids_train, ids_val, cancer_train, cancer_val = train_test_split(
+                        x_temp,
+                        y_temp,
+                        ids_temp,
+                        cancer_temp,
+                        test_size=val_adj,
+                        random_state=self.random_state,
+                    )
                 test_ids = ids_test
             else:
                 # Shuffle and split indices for this hospital's chunk

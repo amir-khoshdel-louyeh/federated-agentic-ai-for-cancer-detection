@@ -275,6 +275,9 @@ class HospitalNode(HospitalLifecycleContract):
         selected_patterns = self.metrics_store.get("selected_patterns", self.scope.agent_portfolio.selected_patterns())
         selected_performance = {}
 
+        test_probabilities: dict[str, np.ndarray] = {}
+        test_uncertainties: dict[str, np.ndarray] = {}
+
         for cancer_type, pattern_name in selected_patterns.items():
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             x_val, y_val = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
@@ -291,6 +294,11 @@ class HospitalNode(HospitalLifecycleContract):
                 test_probs,
                 threshold=self._decision_threshold_for(cancer_type),
             )
+            test_probabilities[cancer_type] = test_probs
+            if x_test.shape[0] > 0:
+                test_uncertainties[cancer_type] = agent.predict_uncertainty(x_test)
+            else:
+                test_uncertainties[cancer_type] = np.full(0, 1.0, dtype=np.float32)
 
         for cancer_type, pattern_name in selected_patterns.items():
             prediction_key = f"{cancer_type.lower()}::{pattern_name}"
@@ -304,9 +312,14 @@ class HospitalNode(HospitalLifecycleContract):
 
         # Meta-manager conflict resolution / hardening from specialist outputs.
         meta_manager = MetaManager(soft_vote_temperature=self.config.get("meta_agent", {}).get("local", {}).get("soft_vote_temperature", 1.0))
-        # Use predictions arrays and uncertainties based on AUC distance (proxy) with 0 fallback
-        predictions = {ct: np.full(self.scope.data.x_test.shape[0], selected_performance[ct]["test"]["accuracy"] if ct in selected_performance else 0.0) for ct in selected_patterns}
-        uncertainties = {ct: np.full(self.scope.data.x_test.shape[0], 1.0 - selected_performance[ct]["test"]["auc"] if ct in selected_performance else 1.0) for ct in selected_patterns}
+        predictions = {
+            ct: test_probabilities.get(ct, np.full(self.scope.data.x_test.shape[0], 0.0, dtype=np.float32))
+            for ct in selected_patterns
+        }
+        uncertainties = {
+            ct: test_uncertainties.get(ct, np.full(self.scope.data.x_test.shape[0], 1.0, dtype=np.float32))
+            for ct in selected_patterns
+        }
 
         # Meta information can be used for aggregated decision support.
         meta_result = meta_manager.combine(predictions, uncertainties)
