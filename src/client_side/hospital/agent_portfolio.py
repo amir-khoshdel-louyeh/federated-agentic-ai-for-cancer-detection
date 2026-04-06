@@ -153,7 +153,7 @@ class AgentPortfolio:
     ) -> dict[str, ThinkingPattern]:
         if initial_patterns is None:
             return {
-                cancer_type: create_thinking_pattern("rule_based")
+                cancer_type: create_thinking_pattern("pretrained_library")
                 for cancer_type in self._cancer_types
             }
 

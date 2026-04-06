@@ -24,10 +24,11 @@ cancer_types:
 
 # Datasets loaded and used to create the local hospital sets.
 enabled_datasets:
-  - HAM10000
+  - ISIC2019
 
 ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
-isic_csv: 'src/client_side/datasets/ISIC2019/ISIC2019_metadata.csv'
+isic_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_GroundTruth.csv'
+isic_metadata_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_Metadata.csv'
 out_dir: outputs
 
 # ========================
@@ -69,6 +70,9 @@ augmentation:
   hair_removal_strength: 0.05
   num_augmented_copies: 0
 
+preprocessing:
+  enabled: false
+
 sampling:
   total_samples: 6000
   random_seed: 42
@@ -77,7 +81,7 @@ sampling:
 # SYSTEM SETTINGS
 # ========================
 
-hospital_ids: HOSPITAL1, HOSPITAL2
+hospital_ids: HOSPITAL1
 num_agents_per_hospital: 4
 
 # ========================
@@ -85,7 +89,7 @@ num_agents_per_hospital: 4
 # ========================
 
 federation:
-  aggregation_algorithm: fedprox
+  aggregation_algorithm: no_operation
 
   fedprox:
     mu: 0.5
@@ -114,12 +118,6 @@ agents:
 
   patterns:
     available:
-      - rule_based
-      - rule_based_strict
-      - rule_clinical
-      - bayesian
-      - deep_learning
-      - logistic
       - pretrained_library
 
     default_mapping:
@@ -129,38 +127,6 @@ agents:
       AKIEC: pretrained_library
 
     pattern_params:
-      rule_based:
-        threshold: 0.58
-        weights:
-          asymmetry: 0.28
-          border: 0.22
-          color: 0.18
-          diameter: 0.14
-          age: 0.10
-          sex: 0.04
-          site: 0.04
-        scale: 10.0
-
-      rule_based_strict:
-        threshold: 0.68
-
-      rule_clinical:
-        age_threshold: 30
-        pediatric_penalty: 0.6
-        weights:
-          asymmetry: 0.35
-          border: 0.25
-          color: 0.20
-          diameter: 0.20
-        scale: 10.0
-
-      logistic:
-        C: 1.0
-        penalty: l2
-        class_weight: balanced
-        max_iter: 1000
-        random_state: 42
-
       pretrained_library:
         max_iter: 300
         learning_rate: 0.05
@@ -225,22 +191,22 @@ tracking:
 
 training:
   max_local_samples: 2000
-  rebalance_method: none
+  rebalance_method: oversample
   imbalance_ratio_threshold: 1
-  decision_threshold: 0.15
+  decision_threshold: 0.10
   decision_thresholds:
-    BCC: 0.10
-    SCC: 0.10
-    MELANOMA: 0.10
-    AKIEC: 0.10
+    BCC: 0.08
+    SCC: 0.05
+    MELANOMA: 0.08
+    AKIEC: 0.05
   threshold_tuning:
     enabled: true
     rare_classes:
       - SCC
       - AKIEC
-    rare_class_recall_weight: 0.30
-    min_threshold: 0.05
-    max_threshold: 0.45
+    rare_class_recall_weight: 0.70
+    min_threshold: 0.01
+    max_threshold: 0.35
 
 
 simulation:
@@ -260,7 +226,7 @@ output:
   save_global_model: true
   save_local_models: false
   save_metrics: true
-"""
+  """
 
 def ensure_config():
     # اگر پوشه نبود بساز

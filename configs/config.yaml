@@ -61,6 +61,9 @@ augmentation:
   hair_removal_strength: 0.05
   num_augmented_copies: 0
 
+preprocessing:
+  enabled: false
+
 sampling:
   total_samples: 6000
   random_seed: 42
@@ -106,12 +109,6 @@ agents:
 
   patterns:
     available:
-      - rule_based
-      - rule_based_strict
-      - rule_clinical
-      - bayesian
-      - deep_learning
-      - logistic
       - pretrained_library
 
     default_mapping:
@@ -121,38 +118,6 @@ agents:
       AKIEC: pretrained_library
 
     pattern_params:
-      rule_based:
-        threshold: 0.58
-        weights:
-          asymmetry: 0.28
-          border: 0.22
-          color: 0.18
-          diameter: 0.14
-          age: 0.10
-          sex: 0.04
-          site: 0.04
-        scale: 10.0
-
-      rule_based_strict:
-        threshold: 0.68
-
-      rule_clinical:
-        age_threshold: 30
-        pediatric_penalty: 0.6
-        weights:
-          asymmetry: 0.35
-          border: 0.25
-          color: 0.20
-          diameter: 0.20
-        scale: 10.0
-
-      logistic:
-        C: 1.0
-        penalty: l2
-        class_weight: balanced
-        max_iter: 1000
-        random_state: 42
-
       pretrained_library:
         max_iter: 300
         learning_rate: 0.05

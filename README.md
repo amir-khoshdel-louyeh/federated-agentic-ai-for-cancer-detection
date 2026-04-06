@@ -37,11 +37,9 @@ We design a **Hybrid Agentic AI system with Federated Learning**, where:
 
 ### 1. Local Agentic AI (Per Hospital)
 
-Each hospital runs multiple intelligent agents:
+Each hospital runs a lightweight pretrained-library agent:
 
-- **Rule-Based Agent**: deterministic medical logic
-- **Bayesian Agent**: probabilistic reasoning
-- **Deep Learning Agent**: CNN/Transformer for medical imaging
+- **Pretrained Library Agent**: ensemble learner for structured metadata
 
 Each agent outputs:
 
@@ -104,7 +102,7 @@ Compliance targets:
 ## Experimental Setup
 
 - **Hospitals**: 2-5 distributed nodes
-- **Agents**: Rule-Based, Bayesian, Deep Learning
+- **Agents**: Pretrained library
 - **Training**: local epochs + federated rounds
 - **Evaluation**: local and global validation datasets
 
@@ -203,10 +201,6 @@ The pipeline now supports a centralized, configurable setup from `configs/config
 - `agents.types`: active agent subtype list
 - `agents.patterns.default_mapping`: maps each cancer type to a thinking pattern (e.g. `BCC: pretrained_library`)
 - `agents.patterns.pattern_params`: per-pattern hyperparameters, including:
-  - `rule_based`: `threshold`, `weights`, `scale`
-  - `rule_based_strict`: `threshold`
-  - `rule_clinical`: `age_threshold`, `pediatric_penalty`, `weights`, `scale`
-  - `logistic`: `C`, `penalty`, `class_weight`, `max_iter`, `random_state`
   - `pretrained_library`: `max_iter`, `learning_rate`, `max_depth`, `class_weight`, `random_state`
 - `federation`: includes `aggregation_algorithm` and
   - `fedprox.mu`
@@ -239,12 +233,12 @@ python -m src.hospital.main \
 - `outputs/predictions.csv`: test predictions and probabilities per agent
 ## Pre-trained and high-quality agents
 
-This repository now includes `LogisticThinkingPattern` in `src/client_side/agents/logistic_pattern.py`.
-- Configure via `configs/config.yaml` under `agents.patterns.default_mapping` (e.g., `BCC: logistic`).
+This repository now uses `pretrained_library` in `src/client_side/agents/library_pattern.py`.
+- Configure via `configs/config.yaml` under `agents.patterns.default_mapping` (e.g., `BCC: pretrained_library`).
 - Save a trained model via `AgentPortfolio.save_all_models()`.
-- Load a pre-trained model via `ThinkingPattern.load_model()` (used from `LogisticThinkingPattern`).
+- Load a pre-trained model via `ThinkingPattern.load_model()`.
 
 To use pre-trained weights in simulations:
 1. Train one hospital once with data and persist the model path.
 2. Set `pretrained_path` in your agent factory or pattern setup (future extension).
-3. Use `logistic` as a thinking pattern for stronger baseline performance.
+3. Use `pretrained_library` as a thinking pattern.
