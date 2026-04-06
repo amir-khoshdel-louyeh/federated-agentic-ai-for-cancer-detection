@@ -58,10 +58,13 @@ class HospitalNode(HospitalLifecycleContract):
         self.isic_labels_csv = Path(isic_labels_csv) if isic_labels_csv is not None else None
         self.isic_metadata_csv = Path(isic_metadata_csv) if isic_metadata_csv is not None else None
         self.config = config
-        self.decision_threshold = float(config.get("decision_threshold", 0.5)) if config else 0.5
+        training_cfg = (config.get("training", {}) or {}) if config else {}
+        self.decision_threshold = float(
+            training_cfg.get("decision_threshold", config.get("decision_threshold", 0.5) if config else 0.5)
+        ) if config else 0.5
         self.decision_thresholds = {}
         if config:
-            thresholds = (config.get("training", {}) or {}).get("decision_thresholds", {})
+            thresholds = training_cfg.get("decision_thresholds", {})
             if isinstance(thresholds, dict):
                 self.decision_thresholds = {
                     str(k).strip().upper(): float(v)
@@ -126,6 +129,50 @@ class HospitalNode(HospitalLifecycleContract):
             return self.decision_thresholds[key]
         return self.decision_threshold
 
+    def _threshold_tuning_enabled(self) -> bool:
+        if not self.config:
+            return False
+        return bool((self.config.get("training", {}) or {}).get("threshold_tuning", {}).get("enabled", False))
+
+    def _tune_decision_thresholds(
+        self,
+        val_labels: dict[str, np.ndarray],
+        val_predictions: dict[str, np.ndarray],
+    ) -> dict[str, float]:
+        tuned: dict[str, float] = {}
+        tuning_cfg = (self.config.get("training", {}) or {}).get("threshold_tuning", {}) or {}
+        rare_classes = {
+            str(ct).strip().upper()
+            for ct in tuning_cfg.get("rare_classes", ["SCC", "AKIEC"])
+            if str(ct).strip()
+        }
+        recall_weight = float(tuning_cfg.get("rare_class_recall_weight", 0.25))
+        min_threshold = float(tuning_cfg.get("min_threshold", 0.02))
+        max_threshold = float(tuning_cfg.get("max_threshold", 0.45))
+
+        for cancer_type, y_val in val_labels.items():
+            key = str(cancer_type).strip().upper()
+            probs = val_predictions.get(cancer_type)
+            if probs is None or len(probs) == 0 or np.unique(y_val).size < 2:
+                tuned[key] = self._decision_threshold_for(key)
+                continue
+
+            precision, recall, thresholds = precision_recall_curve(y_val, probs, pos_label=1)
+            thresholds = np.concatenate([thresholds, [1.0]])
+            f1_scores = 2 * (precision * recall) / np.maximum(precision + recall, 1e-8)
+
+            if key in rare_classes:
+                objective = recall + recall_weight * precision
+            else:
+                objective = f1_scores
+
+            best_index = int(np.nanargmax(objective))
+            best_threshold = float(thresholds[best_index])
+            best_threshold = max(min_threshold, min(best_threshold, max_threshold))
+            tuned[key] = best_threshold
+
+        return tuned
+
     def get_cancer_filtered_split(
         self,
         cancer_type: str,
@@ -146,7 +193,9 @@ class HospitalNode(HospitalLifecycleContract):
         if self.local_data is None:
             raise RuntimeError("Call initialize() before train().")
 
+        val_labels: dict[str, np.ndarray] = {}
         val_predictions: dict[str, np.ndarray] = {}
+        test_labels: dict[str, np.ndarray] = {}
         test_predictions: dict[str, np.ndarray] = {}
         training_warnings: dict[str, str] = {}
         per_agent_metrics: dict[str, dict] = {}
@@ -160,7 +209,7 @@ class HospitalNode(HospitalLifecycleContract):
                 raise TypeError(f"Portfolio agent for {cancer_type} must be a SkinCancerAgent.")
 
             x_train, y_train = self.get_cancer_filtered_split(cancer_type=cancer_type, split="train")
-            x_val, _ = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
+            x_val, y_val = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
             x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
 
             if max_local_samples > 0 and x_train.shape[0] > max_local_samples:
@@ -214,17 +263,15 @@ class HospitalNode(HospitalLifecycleContract):
             self._validate_prediction_shape(agent.name, val_probs, expected_size=x_val.shape[0])
             self._validate_prediction_shape(agent.name, test_probs, expected_size=x_test.shape[0])
 
-            val_predictions[agent.name] = val_probs
-            test_predictions[agent.name] = test_probs
+            val_labels[cancer_type] = y_val
+            val_predictions[cancer_type] = val_probs
+            test_labels[cancer_type] = y_test
+            test_predictions[cancer_type] = test_probs
 
-            # Compute and store per-agent metrics for test split
-            if len(y_test) > 0:
-                metrics = self._compute_binary_metrics(
-                    y_test,
-                    test_probs,
-                    threshold=self._decision_threshold_for(cancer_type),
-                )
-                per_agent_metrics[agent.name] = metrics
+        if self._threshold_tuning_enabled():
+            tuned = self._tune_decision_thresholds(val_labels, val_predictions)
+            self.decision_thresholds.update(tuned)
+            self.metrics_store["tuned_thresholds"] = tuned
 
         # Convert all predictions to lists for JSON serialization
         self.metrics_store["predictions"] = {
@@ -233,6 +280,30 @@ class HospitalNode(HospitalLifecycleContract):
         }
         if training_warnings:
             self.metrics_store["training_warnings"] = training_warnings
+
+        # Compute final per-agent metrics for test split using tuned thresholds.
+        for cancer_type in self.scope.agent_portfolio.cancer_types:
+            test_probs = test_predictions.get(cancer_type, np.array([], dtype=np.float32))
+            y_test = test_labels.get(cancer_type, np.array([], dtype=np.int64))
+            if len(y_test) > 0:
+                metrics = self._compute_binary_metrics(
+                    y_test,
+                    test_probs,
+                    threshold=self._decision_threshold_for(cancer_type),
+                )
+            else:
+                metrics = {
+                    "accuracy": 0.0,
+                    "f1": 0.0,
+                    "auc": 0.5,
+                    "pr_auc": 0.0,
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "log_loss": float("inf"),
+                    "sensitivity": 0.0,
+                    "specificity": 0.0,
+                }
+            per_agent_metrics[self.scope.agent_portfolio.get_agent(cancer_type).name] = metrics
 
         # Store per-agent metrics for federation
         self.metrics_store.setdefault("evaluation", {})["test"] = per_agent_metrics
@@ -347,7 +418,7 @@ class HospitalNode(HospitalLifecycleContract):
             self._validate_prediction_shape(agent.name, test_probs, expected_size=x_external.shape[0])
 
             if x_external.shape[0] > 0:
-                metrics = self._compute_binary_metrics(y_test, test_probs, threshold=self.decision_threshold)
+                metrics = self._compute_binary_metrics(y_test, test_probs, threshold=self._decision_threshold_for(cancer_type))
             else:
                 metrics = {
                     "accuracy": 0.0,

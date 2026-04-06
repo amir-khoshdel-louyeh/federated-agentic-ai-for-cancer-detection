@@ -226,13 +226,21 @@ tracking:
 training:
   max_local_samples: 2000
   rebalance_method: none
-  imbalance_ratio_threshold: 5
+  imbalance_ratio_threshold: 1
   decision_threshold: 0.15
   decision_thresholds:
-    BCC: 0.1
-    SCC: 0.1
-    MELANOMA: 0.1
-    AKIEC: 0.1
+    BCC: 0.10
+    SCC: 0.10
+    MELANOMA: 0.10
+    AKIEC: 0.10
+  threshold_tuning:
+    enabled: true
+    rare_classes:
+      - SCC
+      - AKIEC
+    rare_class_recall_weight: 0.30
+    min_threshold: 0.05
+    max_threshold: 0.45
 
 
 simulation:

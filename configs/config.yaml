@@ -69,7 +69,7 @@ sampling:
 # SYSTEM SETTINGS
 # ========================
 
-hospital_ids: HOSPITAL1, HOSPITAL2
+hospital_ids: HOSPITAL1
 num_agents_per_hospital: 4
 
 # ========================
@@ -77,7 +77,7 @@ num_agents_per_hospital: 4
 # ========================
 
 federation:
-  aggregation_algorithm: fedprox
+  aggregation_algorithm: no_operation
 
   fedprox:
     mu: 0.5
@@ -219,12 +219,20 @@ training:
   max_local_samples: 2000
   rebalance_method: oversample
   imbalance_ratio_threshold: 1
-  decision_threshold: 0.15
+  decision_threshold: 0.10
   decision_thresholds:
-    BCC: 0.1
-    SCC: 0.1
-    MELANOMA: 0.1
-    AKIEC: 0.1
+    BCC: 0.08
+    SCC: 0.05
+    MELANOMA: 0.08
+    AKIEC: 0.05
+  threshold_tuning:
+    enabled: true
+    rare_classes:
+      - SCC
+      - AKIEC
+    rare_class_recall_weight: 0.70
+    min_threshold: 0.01
+    max_threshold: 0.35
 
 
 simulation:
