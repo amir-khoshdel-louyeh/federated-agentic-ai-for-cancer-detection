@@ -73,6 +73,7 @@ def make_hospitals(config, data_pipeline):
             hospital_kwargs["ham_metadata_csv"] = config["ham_csv"]
         if "ISIC2019" in enabled_datasets:
             hospital_kwargs["isic_labels_csv"] = config["isic_csv"]
+            hospital_kwargs["isic_metadata_csv"] = config.get("isic_metadata_csv")
         hospitals[hid] = HospitalNode(**hospital_kwargs)
     return hospitals
 

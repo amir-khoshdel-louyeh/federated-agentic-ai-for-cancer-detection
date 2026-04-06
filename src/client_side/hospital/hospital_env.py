@@ -101,6 +101,7 @@ class VirtualHospital:
         self,
         ham_metadata_csv: str | Path = None,
         isic_labels_csv: str | Path = None,
+        isic_metadata_csv: str | Path = None,
         hospital_id: str = None,
         hospital_ids: list = None,
     ) -> HospitalSplits:
@@ -109,7 +110,7 @@ class VirtualHospital:
         if ham_metadata_csv is not None:
             dfs.append(self._load_ham10000(ham_metadata_csv))
         if isic_labels_csv is not None:
-            dfs.append(self._load_isic2019(isic_labels_csv))
+            dfs.append(self._load_isic2019(isic_labels_csv, isic_metadata_csv))
         if not dfs:
             raise ValueError("No dataset enabled: at least one of ham_metadata_csv or isic_labels_csv must be provided.")
         data = pd.concat(dfs, axis=0, ignore_index=True)
@@ -296,25 +297,40 @@ class VirtualHospital:
         )
         return self._build_features(base, df, age_candidates=("age",), site_candidates=("localization",))
 
-    def _load_isic2019(self, labels_csv: str | Path) -> pd.DataFrame:
-        df = pd.read_csv(labels_csv)
-        image_col = "image" if "image" in df.columns else df.columns[0]
+    def _load_isic2019(self, labels_csv: str | Path, metadata_csv: str | Path = None) -> pd.DataFrame:
+        labels_df = pd.read_csv(labels_csv)
+        image_col = "image" if "image" in labels_df.columns else labels_df.columns[0]
+
+        if metadata_csv is not None:
+            metadata_df = pd.read_csv(metadata_csv)
+            metadata_image_col = "image" if "image" in metadata_df.columns else metadata_df.columns[0]
+            metadata_df = metadata_df.rename(columns={metadata_image_col: image_col})
+            if image_col not in metadata_df.columns:
+                raise ValueError(
+                    f"ISIC metadata CSV must contain an image id column; got {metadata_df.columns.tolist()}"
+                )
+            labels_df = labels_df.merge(metadata_df, on=image_col, how="left")
 
         malignant_isic = get_malignant_isic(self.config)
-        present_labels = [label for label in malignant_isic if label in df.columns]
+        present_labels = [label for label in malignant_isic if label in labels_df.columns]
         if not present_labels:
             raise ValueError("ISIC 2019 labels CSV must contain at least one malignant class column.")
 
-        target = (df[present_labels].sum(axis=1) > 0).astype(int)
-        cancer_type = self._infer_isic_cancer_type(df)
+        target = (labels_df[present_labels].sum(axis=1) > 0).astype(int)
+        cancer_type = self._infer_isic_cancer_type(labels_df)
         base = pd.DataFrame(
             {
-                "image_id": df[image_col].astype(str),
+                "image_id": labels_df[image_col].astype(str),
                 "target": target,
                 "cancer_type": cancer_type,
             }
         )
-        return self._build_features(base, df, age_candidates=("age_approx", "age"), site_candidates=("anatom_site_general",))
+        return self._build_features(
+            base,
+            labels_df,
+            age_candidates=("age_approx", "age"),
+            site_candidates=("anatom_site_general",),
+        )
 
     @staticmethod
     def _infer_isic_cancer_type(df: pd.DataFrame) -> pd.Series:

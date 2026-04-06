@@ -46,6 +46,7 @@ class HospitalNode(HospitalLifecycleContract):
         hospital_id: str,
         ham_metadata_csv: str | Path = None,
         isic_labels_csv: str | Path = None,
+        isic_metadata_csv: str | Path = None,
         dataset_handler: VirtualHospital | None = None,
         data_pipeline: LocalDataPipeline | None = None,
         agent_portfolio: AgentPortfolioContract | None = None,
@@ -55,6 +56,7 @@ class HospitalNode(HospitalLifecycleContract):
         self.hospital_id = hospital_id
         self.ham_metadata_csv = Path(ham_metadata_csv) if ham_metadata_csv is not None else None
         self.isic_labels_csv = Path(isic_labels_csv) if isic_labels_csv is not None else None
+        self.isic_metadata_csv = Path(isic_metadata_csv) if isic_metadata_csv is not None else None
         self.config = config
         self.decision_threshold = float(config.get("decision_threshold", 0.5)) if config else 0.5
         self.decision_thresholds = {}
@@ -90,6 +92,7 @@ class HospitalNode(HospitalLifecycleContract):
         self.local_data = self.data_pipeline.load(
             ham_metadata_csv=self.ham_metadata_csv,
             isic_labels_csv=self.isic_labels_csv,
+            isic_metadata_csv=self.isic_metadata_csv,
         )
         self.scope.data = self.local_data.bundle
 
@@ -175,60 +178,35 @@ class HospitalNode(HospitalLifecycleContract):
                     "used malignant binary labels fallback."
                 )
 
-            # Address heavy class imbalance with within-hospital minority oversampling
+            # Address class imbalance by oversampling the minority class for training.
             rebalance_method = self.config.get('training', {}).get('rebalance_method', 'oversample') if self.config else 'oversample'
             counts = np.bincount(y_train, minlength=2)
             if counts.min() > 0:
-                imbalance_threshold = self.config.get('training', {}).get('imbalance_ratio_threshold', 5) if self.config else 5
+                imbalance_threshold = self.config.get('training', {}).get('imbalance_ratio_threshold', 1) if self.config else 1
                 ratio = max(counts) / max(1, min(counts))
-                if ratio > imbalance_threshold:
-                    if rebalance_method == 'smote':
-                        try:
-                            from imblearn.over_sampling import SMOTE
-                            smote = SMOTE(random_state=random_state)
-                            x_train, y_train = smote.fit_resample(x_train, y_train)
-                            training_warnings[cancer_type] = (training_warnings.get(cancer_type, "") + " SMOTE oversampling applied.").strip()
-                        except ImportError:
-                            # fallback to plain resample oversampling if imblearn is not installed.
-                            minority_label = int(np.argmin(counts))
-                            majority_label = 1 - minority_label
-                            x_minority = x_train[y_train == minority_label]
-                            y_minority = y_train[y_train == minority_label]
-                            x_majority = x_train[y_train == majority_label]
-                            y_majority = y_train[y_train == majority_label]
-                            x_minority_up, y_minority_up = resample(
-                                x_minority,
-                                y_minority,
-                                replace=True,
-                                n_samples=x_majority.shape[0],
-                                random_state=random_state,
-                            )
-                            x_train = np.vstack([x_majority, x_minority_up])
-                            y_train = np.concatenate([y_majority, y_minority_up])
-                            perm = np.random.default_rng(random_state).permutation(x_train.shape[0])
-                            x_train = x_train[perm]
-                            y_train = y_train[perm]
-                            training_warnings[cancer_type] = (training_warnings.get(cancer_type, "") + " SMOTE unavailable, fallback oversampling applied.").strip()
-                    else:
-                        majority_label = int(np.argmax(counts))
-                        minority_label = 1 - majority_label
-                        x_majority = x_train[y_train == majority_label]
-                        y_majority = y_train[y_train == majority_label]
-                        x_minority = x_train[y_train == minority_label]
-                        y_minority = y_train[y_train == minority_label]
-                        x_minority_up, y_minority_up = resample(
-                            x_minority,
-                            y_minority,
-                            replace=True,
-                            n_samples=x_majority.shape[0],
-                            random_state=random_state,
-                        )
-                        x_train = np.vstack([x_majority, x_minority_up])
-                        y_train = np.concatenate([y_majority, y_minority_up])
-                        perm = np.random.default_rng(random_state).permutation(x_train.shape[0])
-                        x_train = x_train[perm]
-                        y_train = y_train[perm]
-                        training_warnings[cancer_type] = (training_warnings.get(cancer_type, "") + " Class imbalance oversampled minority class.").strip()
+                if ratio > imbalance_threshold and rebalance_method == 'oversample':
+                    majority_label = int(np.argmax(counts))
+                    minority_label = 1 - majority_label
+                    x_majority = x_train[y_train == majority_label]
+                    y_majority = y_train[y_train == majority_label]
+                    x_minority = x_train[y_train == minority_label]
+                    y_minority = y_train[y_train == minority_label]
+                    x_minority_up, y_minority_up = resample(
+                        x_minority,
+                        y_minority,
+                        replace=True,
+                        n_samples=x_majority.shape[0],
+                        random_state=random_state,
+                    )
+                    x_train = np.vstack([x_majority, x_minority_up])
+                    y_train = np.concatenate([y_majority, y_minority_up])
+                    perm = np.random.default_rng(random_state).permutation(x_train.shape[0])
+                    x_train = x_train[perm]
+                    y_train = y_train[perm]
+                    training_warnings[cancer_type] = (
+                        training_warnings.get(cancer_type, "")
+                        + " Class imbalance oversampled minority class to balance the training set."
+                    ).strip()
 
             agent.fit(x_train, y_train)
             val_probs = agent.predict_proba(x_val)

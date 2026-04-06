@@ -15,10 +15,11 @@ cancer_types:
 
 # Datasets loaded and used to create the local hospital sets.
 enabled_datasets:
-  - HAM10000
+  - ISIC2019
 
 ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
-isic_csv: 'src/client_side/datasets/ISIC2019/ISIC2019_metadata.csv'
+isic_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_GroundTruth.csv'
+isic_metadata_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_Metadata.csv'
 out_dir: outputs
 
 # ========================
@@ -216,8 +217,8 @@ tracking:
 
 training:
   max_local_samples: 2000
-  rebalance_method: none
-  imbalance_ratio_threshold: 5
+  rebalance_method: oversample
+  imbalance_ratio_threshold: 1
   decision_threshold: 0.15
   decision_thresholds:
     BCC: 0.1

@@ -80,12 +80,15 @@ class LocalDataPipeline:
         self,
         ham_metadata_csv: str | Path = None,
         isic_labels_csv: str | Path = None,
+        isic_metadata_csv: str | Path = None,
     ) -> LocalHospitalData:
         kwargs = {}
         if ham_metadata_csv is not None:
             kwargs["ham_metadata_csv"] = ham_metadata_csv
         if isic_labels_csv is not None:
             kwargs["isic_labels_csv"] = isic_labels_csv
+        if isic_metadata_csv is not None:
+            kwargs["isic_metadata_csv"] = isic_metadata_csv
         # Pass hospital_id and hospital_ids to activate per-hospital chunking
         kwargs["hospital_id"] = self.hospital_id
         kwargs["hospital_ids"] = self.hospital_ids

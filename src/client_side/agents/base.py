@@ -67,3 +67,6 @@ class SkinCancerAgent(ABC):
 
 	def predict_proba(self, x: np.ndarray) -> np.ndarray:
 		return self._thinking_pattern.predict_proba(x)
+
+	def predict_uncertainty(self, x: np.ndarray, n_samples: int = 25) -> np.ndarray:
+		return self._thinking_pattern.predict_uncertainty(x, n_samples=n_samples)
