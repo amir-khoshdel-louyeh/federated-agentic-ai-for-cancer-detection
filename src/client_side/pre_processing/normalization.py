@@ -17,6 +17,39 @@ HAM_TO_CANCER_TYPE = {
 }
 
 
+def _factorize_sorted(values: pd.Series) -> np.ndarray:
+    values = values.astype(str).fillna("missing")
+    codes, _ = pd.factorize(values, sort=True)
+    return codes.astype(np.int64)
+
+
+def _safe_column_name(prefix: str, value: str) -> str:
+    safe_value = str(value).strip().lower()
+    safe_value = safe_value.replace(" ", "_").replace("/", "_").replace("-", "_").replace("\n", "_")
+    safe_value = "".join(ch for ch in safe_value if ch.isalnum() or ch == "_")
+    return f"{prefix}_{safe_value or 'missing'}"
+
+
+def _one_hot_encode(series: pd.Series, prefix: str, max_categories: int = 30) -> dict[str, np.ndarray]:
+    if series is None or series.empty:
+        return {}
+
+    categories = pd.Categorical(series.astype(str).fillna("missing"))
+    unique_values = sorted(categories.categories)
+    if len(unique_values) == 0 or len(unique_values) > max_categories:
+        return {}
+
+    encoded = {}
+    for value in unique_values:
+        column_name = _safe_column_name(prefix, value)
+        encoded[column_name] = (categories == value).astype(float).to_numpy()
+    return encoded
+
+
+def _label_encode(series: pd.Series) -> np.ndarray:
+    return _factorize_sorted(series)
+
+
 def normalize_ham10000_metadata(
     metadata_csv: str | Path | pd.DataFrame,
     config: dict[str, Any] | None = None,
@@ -27,7 +60,9 @@ def normalize_ham10000_metadata(
 
     dx = df["dx"].astype(str).str.lower()
     malignant_ham = get_malignant_ham(config)
-    target = dx.isin(malignant_ham).astype(int)
+    dx_encoded = _label_encode(dx)
+    target_mode = (config or {}).get("preprocessing", {}).get("target_encoding", "binary")
+    target = dx_encoded if target_mode == "dx" else dx.isin(malignant_ham).astype(int)
     cancer_type = dx.map(HAM_TO_CANCER_TYPE).fillna("OTHER")
 
     base = pd.DataFrame(
@@ -35,6 +70,7 @@ def normalize_ham10000_metadata(
             "image_id": df[image_col].astype(str),
             "target": target,
             "cancer_type": cancer_type,
+            "dx_encoded": dx_encoded,
         }
     )
     return _build_features(base, df, age_candidates=("age",), site_candidates=("localization",))
@@ -83,14 +119,17 @@ def normalize_isic2019_metadata(
     if not present_labels:
         raise ValueError("ISIC 2019 labels CSV must contain at least one malignant class column.")
 
-    target = (labels_df[present_labels].sum(axis=1) > 0).astype(int)
     cancer_type = _infer_isic_cancer_type(labels_df)
+    cancer_type_encoded = _label_encode(cancer_type)
+    target_mode = (config or {}).get("preprocessing", {}).get("target_encoding", "binary")
+    target = cancer_type_encoded if target_mode == "dx" else (labels_df[present_labels].sum(axis=1) > 0).astype(int)
 
     base = pd.DataFrame(
         {
             "image_id": labels_df[image_col].astype(str),
             "target": target,
             "cancer_type": cancer_type,
+            "cancer_type_encoded": cancer_type_encoded,
         }
     )
     return _build_features(
@@ -146,19 +185,30 @@ def _build_features(
 
     sex_col = "sex" if "sex" in src.columns else ("gender" if "gender" in src.columns else None)
     if sex_col:
-        male = src[sex_col].astype(str).str.lower().str.startswith("m").astype(float)
+        sex_series = src[sex_col].astype(str).fillna("missing")
+        male = sex_series.str.lower().str.startswith("m").astype(float)
         out["is_male"] = male
+        out["sex_encoded"] = out["is_male"]
+        sex_one_hot = _one_hot_encode(sex_series, "sex")
+        if sex_one_hot:
+            out = pd.concat([out, pd.DataFrame(sex_one_hot, index=src.index)], axis=1)
     else:
         out["is_male"] = 0.5
+        out["sex_encoded"] = out["is_male"]
 
-    out["sex_encoded"] = out["is_male"]
+    dx_type_col = "dx_type" if "dx_type" in src.columns else None
+    if dx_type_col:
+        out["dx_type_encoded"] = _label_encode(src[dx_type_col].astype(str).fillna("missing"))
 
     site_col = next((c for c in site_candidates if c in src.columns), None)
     if site_col:
-        site_codes = src[site_col].astype("category").cat.codes
-        site_codes = site_codes.replace(-1, site_codes[site_codes >= 0].median() if (site_codes >= 0).any() else 0)
+        site_series = src[site_col].astype(str).fillna("missing")
+        site_codes = _label_encode(site_series)
         out["site_code"] = site_codes.astype(float)
         out["site_scaled"] = _min_max_scale(site_codes)
+        site_one_hot = _one_hot_encode(site_series, "localization")
+        if site_one_hot:
+            out = pd.concat([out, pd.DataFrame(site_one_hot, index=src.index)], axis=1)
     else:
         out["site_code"] = _deterministic_feature(out["image_id"], salt="site_code")
         out["site_scaled"] = _deterministic_feature(out["image_id"], salt="site")

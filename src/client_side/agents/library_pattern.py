@@ -45,13 +45,14 @@ class PretrainedLibraryThinkingPattern(ThinkingPattern):
             params = {}
 
         l2_reg = float(params.get("l2_regularization", 1.0))
+        training_weight = (config.get("training", {}) or {}).get("class_weight", "balanced")
 
         return cls(
             max_iter=int(params.get("max_iter", 200)),
             learning_rate=float(params.get("learning_rate", 0.1)),
             max_depth=int(params.get("max_depth", 6)),
             l2_regularization=l2_reg,
-            class_weight=params.get("class_weight", "balanced"),
+            class_weight=params.get("class_weight", training_weight),
             random_state=int(params.get("random_state", 42)),
         )
 

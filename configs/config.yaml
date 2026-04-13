@@ -62,7 +62,12 @@ augmentation:
   num_augmented_copies: 0
 
 preprocessing:
-  enabled: false
+  enabled: true
+  mode: tabular  # options: tabular, image
+  target_encoding: binary  # options: binary, dx
+  image:
+    resize: [224, 224]
+    normalize: imagenet  # options: minmax, imagenet
 
 sampling:
   total_samples: 6000
@@ -183,6 +188,7 @@ tracking:
 training:
   max_local_samples: 2000
   rebalance_method: oversample
+  class_weight: balanced  # options: balanced, none
   imbalance_ratio_threshold: 1
   decision_threshold: 0.10
   decision_thresholds:
