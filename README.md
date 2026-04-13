@@ -8,7 +8,35 @@ This project proposes a next-generation AI system for cancer detection that comb
 - Federated Learning (FL)
 - Privacy-preserving techniques
 
-The goal is to enable multiple hospitals to collaboratively train high-quality cancer detection models without sharing sensitive patient data.
+The goal is to enable multiple hospitals to collaboratively build high-quality cancer detection systems without sharing sensitive patient data.
+
+## Installation
+
+1. Activate the project virtual environment:
+   ```bash
+   source .venv/bin/activate
+   ```
+2. Install project dependencies:
+   ```bash
+   pip install -r requirements.txt
+   pip install openai
+   ```
+3. Install and run Ollama for local LLM inference:
+   - Install Ollama from the official source
+   - Pull the model:
+     ```bash
+     ollama pull llama3.1:8b
+     ```
+   - Start the Ollama server:
+     ```bash
+     ollama serve
+     ```
+4. Confirm the local model is available:
+   ```bash
+   curl http://localhost:11434/v1/models
+   ```
+
+> The system now uses local Ollama access for Llama 3.1 8B and does not require an external OpenAI API key.
 
 ## Problem Statement
 
@@ -37,14 +65,15 @@ We design a **Hybrid Agentic AI system with Federated Learning**, where:
 
 ### 1. Local Agentic AI (Per Hospital)
 
-Each hospital runs a lightweight pretrained-library agent:
+Each hospital runs a lightweight LLM-based AI agent using local Ollama inference:
 
-- **Pretrained Library Agent**: ensemble learner for structured metadata
+- **AI Agent**: uses Llama 3.1 8B via Ollama to reason over clinical metadata and output a probability plus reasoning.
 
 Each agent outputs:
 
-- Prediction
-- Confidence score
+- Prediction probability
+- Confidence / uncertainty estimate
+- Structured clinical reasoning
 
 ### 2. Federated Learning Layer
 
@@ -102,7 +131,7 @@ Compliance targets:
 ## Experimental Setup
 
 - **Hospitals**: 2-5 distributed nodes
-- **Agents**: Pretrained library
+- **Agents**: LLM-based `ai_agent` using local Ollama inference
 - **Training**: local epochs + federated rounds
 - **Evaluation**: local and global validation datasets
 
@@ -140,8 +169,8 @@ Compliance targets:
 ## Suggested Tech Stack
 
 - Python
-- PyTorch / TensorFlow
-- Flower / PySyft (Federated Learning)
+- `openai` Python client (for local Ollama access)
+- Ollama + Llama 3.1 8B
 - NumPy / Pandas
 - Scikit-learn
 
@@ -182,26 +211,33 @@ Expected files:
 - ISIC 2019 ground truth CSV (for example `ISIC_2019_Training_GroundTruth.csv`)
 
 
-### Run (CLI Mode)
+### Run
 
-You can now use a command-line interface to run the system using your config.yaml:
+Run the main simulation using the project configuration:
 
 ```bash
-python main.py cli --config configs/config.yaml
+python3 main.py
 ```
+
+The system loads `configs/config.yaml` by default and uses the local Ollama LLM setup.
 
 ## Configuration Reference (New)
 
-The pipeline now supports a centralized, configurable setup from `configs/config.yaml`:
+The pipeline now supports a centralized, configurable setup from `configs/config.yaml`, including local Ollama LLM access:
 
 - `cancer_types`: dynamic set of types in use (default: BCC, SCC, MELANOMA, AKIEC)
 - `data_split`: includes `holdout_test`, `k_folds`, `current_fold`, plus optional:
   - `malignant_ham` (HAM10000 malignant class labels, lowercase)
   - `malignant_isic` (ISIC malignant labels, uppercase)
 - `agents.types`: active agent subtype list
-- `agents.patterns.default_mapping`: maps each cancer type to a thinking pattern (e.g. `BCC: pretrained_library`)
+- `agents.patterns.default_mapping`: maps each cancer type to a thinking pattern (e.g. `BCC: ai_agent`)
 - `agents.patterns.pattern_params`: per-pattern hyperparameters, including:
-  - `pretrained_library`: `max_iter`, `learning_rate`, `max_depth`, `class_weight`, `random_state`
+  - `ai_agent`: local LLM prompt parameters, if needed
+
+- `meta_agent.local_llm`: local LLM configuration for Ollama
+  - `base_url`: local Ollama endpoint (e.g. `http://localhost:11434/v1`)
+  - `model_name`: local Ollama model name (e.g. `llama3.1:8b`)
+  - `temperature`: sampling temperature for the LLM
 - `federation`: includes `aggregation_algorithm` and
   - `fedprox.mu`
   - `adaptive.alpha`, `beta`, `gamma`, `auc_weight`, `f1_weight`, `lifecycle_penalty`, `warning_penalty_per_item`, `min_reliability_score`

@@ -61,6 +61,10 @@ class LLMReasoner:
 		self._local_dependencies_available = self._check_local_dependencies_available()
 		self._warnings_emitted: set[str] = set()
 
+		# If local Ollama is configured, treat it as the primary backend.
+		if self.local_llm_base_url and self.provider in {"auto", "openai", "api"}:
+			self.provider = "local"
+
 	def _check_openai_available(self) -> bool:
 		try:
 			import openai  # noqa: F401
@@ -114,10 +118,10 @@ class LLMReasoner:
 				"ollama_openai_missing",
 			)
 
-		if self.provider in {"openai", "api", "auto"} and self.api_key is None and not self._ollama_backend_usable():
+		if self.provider in {"openai", "api"} and self.api_key is None:
 			self._log_backend_warning(
 				"OpenAI provider selected but OPENAI_API_KEY is not configured. "
-				"If you intend to use Ollama locally, configure `local_llm.base_url` in config.",
+				"Set the environment variable or pass api_key in config.",
 				"openai_api_key_missing",
 			)
 
@@ -126,6 +130,13 @@ class LLMReasoner:
 				"Local provider selected but no local Ollama or local model path is configured. "
 				"Provide `local_llm` settings for Ollama or `local_model_path` for a local Transformers model.",
 				"local_model_missing",
+			)
+
+		if self.provider == "local" and self.local_llm_base_url and not self._openai_available:
+			self._log_backend_warning(
+				"Local Ollama inference requires the `openai` Python package. "
+				"Install it with `pip install openai` in the active environment.",
+				"ollama_openai_missing",
 			)
 
 		if self.provider == "local" and self.local_model_path is not None and not self._local_dependencies_available:
@@ -150,10 +161,10 @@ class LLMReasoner:
 			try:
 				import openai
 
-				if self.local_llm_base_url:
-					openai.api_base = self.local_llm_base_url
-				# Ollama does not require an API key by default for local access.
-				openai.api_key = self.api_key or ""
+				client = openai.OpenAI(
+					api_key=self.api_key or "",
+					base_url=self.local_llm_base_url or None,
+				)
 
 				model_name = self.model_name
 				kwargs: dict[str, Any] = {
@@ -172,7 +183,7 @@ class LLMReasoner:
 					kwargs["functions"] = functions
 				if function_call is not None:
 					kwargs["function_call"] = function_call
-				response = openai.ChatCompletion.create(**kwargs)
+				response = client.chat.completions.create(**kwargs)
 				message = response.choices[0].message
 				content = message.content.strip() if message.content else ""
 				json_data = self._parse_json_response(content)

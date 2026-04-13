@@ -29,7 +29,7 @@ out_dir: outputs
 data_split:
   # Holdout test fraction for k-fold runs (k_folds > 1) or data split mode
   holdout_test: 0.1
-  k_folds: 5
+  k_folds: 1
   current_fold: 0
 
   # malignant labels per dataset to compute binary target.
@@ -49,16 +49,16 @@ data_split:
   mode: tabular
 
   final_test:
-    enabled: true
-    n_samples: 100
+    enabled: false
+    n_samples: 0
     random_seed: 42
 
 augmentation:
-  enabled: true
-  rotation_prob: 0.15
-  flip_prob: 0.15
-  color_jitter_strength: 0.1
-  hair_removal_strength: 0.05
+  enabled: false
+  rotation_prob: 0.0
+  flip_prob: 0.0
+  color_jitter_strength: 0.0
+  hair_removal_strength: 0.0
   num_augmented_copies: 0
 
 preprocessing:
@@ -70,7 +70,7 @@ preprocessing:
     normalize: imagenet  # options: minmax, imagenet
 
 sampling:
-  total_samples: 6000
+  total_samples: 1200
   random_seed: 42
 
 # ========================
@@ -182,7 +182,7 @@ tracking:
 # ========================
 
 training:
-  max_local_samples: 2000
+  max_local_samples: 500
   rebalance_method: oversample
   class_weight: balanced  # options: balanced, none
   imbalance_ratio_threshold: 1
@@ -193,7 +193,7 @@ training:
     MELANOMA: 0.08
     AKIEC: 0.05
   threshold_tuning:
-    enabled: true
+    enabled: false
     rare_classes:
       - SCC
       - AKIEC
@@ -203,12 +203,12 @@ training:
 
 
 simulation:
-  simulate_multi: true
-  compare_all: true
-  num_rounds: 8
-  num_epoch: 3
+  simulate_multi: false
+  compare_all: false
+  num_rounds: 1
+  num_epoch: 1
   early_stop_metric: auc
-  early_stop_patience: 3
+  early_stop_patience: 1
   batch_size: 16
 
 # ========================

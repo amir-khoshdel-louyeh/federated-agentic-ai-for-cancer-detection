@@ -106,9 +106,17 @@ class HospitalNode(HospitalLifecycleContract):
         if self.scope.pattern_policy is not None:
             selected_patterns = self.scope.pattern_policy.select_patterns()
             pattern_params = (self.config or {}).get("agents", {}).get("pattern_params", {})
+            default_provider = self.config.get("meta_agent", {}).get("provider", "local")
+            default_local_llm = self.config.get("meta_agent", {}).get("local_llm", {})
+            default_api_key = self.config.get("meta_agent", {}).get("api_key")
             for cancer_type, pattern_name in selected_patterns.items():
                 config_for_pattern = pattern_params.get(pattern_name, {}) if isinstance(pattern_params, dict) else {}
-                pattern = create_thinking_pattern(pattern_name, pattern_config=config_for_pattern)
+                pattern_config = dict(config_for_pattern) if isinstance(config_for_pattern, dict) else {}
+                pattern_config.setdefault("provider", default_provider)
+                pattern_config.setdefault("local_llm_config", default_local_llm)
+                if default_api_key is not None:
+                    pattern_config.setdefault("api_key", default_api_key)
+                pattern = create_thinking_pattern(pattern_name, pattern_config=pattern_config)
                 self.scope.agent_portfolio.set_pattern(cancer_type, pattern)
 
         self.metrics_store["selected_patterns"] = self.scope.agent_portfolio.selected_patterns()
