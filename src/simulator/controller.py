@@ -48,9 +48,17 @@ def make_hospitals(config, data_pipeline):
     enabled_datasets = config.get("enabled_datasets", [])
     num_epoch = int(config.get("simulation", {}).get("num_epoch", 1))
     hospitals = {}
+    local_llm_config = config.get("meta_agent", {}).get("local_llm", {})
+    default_provider = config.get("meta_agent", {}).get("provider", "local")
     for hid in hospital_ids:
         patterns = {
-            ct: create_thinking_pattern(agent_patterns[ct])
+            ct: create_thinking_pattern(
+                agent_patterns[ct],
+                pattern_config={
+                    "provider": default_provider,
+                    "local_llm_config": local_llm_config,
+                },
+            )
             for ct in agent_patterns
         }
         portfolio = AgentPortfolio(initial_patterns=patterns)

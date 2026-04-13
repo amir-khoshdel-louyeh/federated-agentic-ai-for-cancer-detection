@@ -114,22 +114,13 @@ agents:
 
   patterns:
     available:
-      - pretrained_library
+      - ai_agent
 
     default_mapping:
-      BCC: pretrained_library
-      SCC: pretrained_library
-      MELANOMA: pretrained_library
-      AKIEC: pretrained_library
-
-    pattern_params:
-      pretrained_library:
-        max_iter: 300
-        learning_rate: 0.05
-        max_depth: 8
-        l2_regularization: 1.5 
-        class_weight: balanced
-        random_state: 42
+      BCC: ai_agent
+      SCC: ai_agent
+      MELANOMA: ai_agent
+      AKIEC: ai_agent
 
     allow_dynamic_switch: false
 
@@ -145,6 +136,11 @@ finalizer:
 # ========================
 
 meta_agent:
+  provider: local
+  local_llm:
+    base_url: "http://localhost:11434/v1"
+    model_name: "llama3.1:8b"
+    temperature: 0
   local:
     enable: true
     weighting_strategy: adaptive

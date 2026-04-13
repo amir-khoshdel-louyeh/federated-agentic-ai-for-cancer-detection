@@ -48,19 +48,9 @@ def delete_existing_artifacts() -> None:
 	logging.info("Initialized fresh output directories.")
 
 def choose_agent_mode() -> str:
-	selection_info = (
-		"\n=== Agent mode selection ===\n"
-		"1) Existing logic-based AI agents\n"
-		"2) Library-based powerful AI agents (pretrained ensemble mode)"
-	)
-	logging.info(selection_info)
-	print(selection_info)
-	choice = input("Enter mode (1 or 2): ").strip() or "1"
-	if choice not in {"1", "2"}:
-		logging.warning("Invalid choice, defaulting to 1")
-		choice = "1"
-	logging.info(f"Agent mode chosen: {choice}")
-	return "built_in" if choice == "1" else "library"
+	logging.info("Agent mode forced to AI-agent only.")
+	print("=== Agent mode forced to AI-agent only ===")
+	return "built_in"
 
 
 def main():
@@ -79,7 +69,7 @@ def main():
 		}
 		logging.info("Using pretrained library agent strategy for all specialists.")
 	else:
-		logging.info("Using existing logic-based agents.")
+		logging.info("Using AI-agent mode for all specialists.")
 
 
 	# Step 2: Initialize system

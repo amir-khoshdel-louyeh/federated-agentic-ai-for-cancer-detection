@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ..agents import (
-    PretrainedLibraryThinkingPattern,
+    AIThinkingPattern,
     ThinkingPattern,
 )
 
@@ -13,7 +13,8 @@ class ThinkingPatternFactory:
 
     def __init__(self) -> None:
         self._builders: dict[str, Callable[[], ThinkingPattern]] = {
-            "pretrained_library": PretrainedLibraryThinkingPattern,
+            "ai_agent": AIThinkingPattern,
+            "pretrained_library": AIThinkingPattern,
         }
 
     def create(self, name: str, pattern_config: dict | None = None) -> ThinkingPattern:
@@ -24,10 +25,10 @@ class ThinkingPatternFactory:
             supported = ", ".join(sorted(self._builders))
             raise ValueError(f"Unsupported thinking pattern: {name}. Supported: {supported}") from exc
 
-        if key == "pretrained_library":
-            return PretrainedLibraryThinkingPattern.from_config(pattern_config)
-
-        # default behavior for simple constructors
+        if pattern_config is None:
+            return builder()
+        if isinstance(pattern_config, dict):
+            return builder(**pattern_config)
         return builder()
 
     def supported_patterns(self) -> tuple[str, ...]:

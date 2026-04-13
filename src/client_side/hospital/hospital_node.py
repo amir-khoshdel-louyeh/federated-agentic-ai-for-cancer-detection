@@ -29,7 +29,7 @@ from .config_helpers import get_cancer_types
 from .data_pipeline import LocalDataPipeline, LocalHospitalData
 from .hospital_env import VirtualHospital
 from .output_schema import build_hospital_output
-from .meta_manager import MetaManager
+from .hospital_manager_agent import HospitalManagerAgent
 from .pattern_factory import ThinkingPatternFactory, create_thinking_pattern
 from .pattern_policy import StaticPatternPolicy
 
@@ -359,26 +359,30 @@ class HospitalNode(HospitalLifecycleContract):
 
         candidate_comparisons = self._build_candidate_comparisons(val_metrics)
 
-        # Meta-manager conflict resolution / hardening from specialist outputs.
-        meta_manager = MetaManager(soft_vote_temperature=self.config.get("meta_agent", {}).get("local", {}).get("soft_vote_temperature", 1.0))
-        predictions = {
-            ct: test_probabilities.get(ct, np.full(self.scope.data.x_test.shape[0], 0.0, dtype=np.float32))
-            for ct in selected_patterns
-        }
-        uncertainties = {
-            ct: test_uncertainties.get(ct, np.full(self.scope.data.x_test.shape[0], 1.0, dtype=np.float32))
-            for ct in selected_patterns
-        }
-
-        # Meta information can be used for aggregated decision support.
-        meta_result = meta_manager.combine(predictions, uncertainties)
+        # Hospital manager agent uses specialist performance and patient metadata to select a lead diagnosis agent.
+        manager = HospitalManagerAgent(
+            provider=self.config.get("meta_agent", {}).get("provider", "local"),
+            model_name=self.config.get("meta_agent", {}).get("model_name", "gpt-3.5-turbo"),
+            local_model_path=self.config.get("meta_agent", {}).get("local_model_path"),
+            local_llm_config=self.config.get("meta_agent", {}).get("local_llm", {}),
+            api_key=self.config.get("meta_agent", {}).get("api_key"),
+        )
+        hospital_manager_output = manager.recommend_lead_agent(
+            patient_metadata={
+                "age": "unknown",
+                "sex": "unknown",
+                "localization": "unknown",
+            },
+            agent_performance=selected_performance,
+            candidate_comparisons=candidate_comparisons,
+        )
 
         self.metrics_store["evaluation"] = {
             "validation": val_metrics,
             "test": test_metrics,
             "selected_performance": selected_performance,
             "candidate_pattern_comparisons": candidate_comparisons,
-            "meta_manager": meta_result,
+            "hospital_manager": hospital_manager_output,
         }
         self.scope.report_output = {
             "hospital_id": self.hospital_id,
@@ -619,13 +623,6 @@ class HospitalNode(HospitalLifecycleContract):
             },
         )
 
-        if hasattr(self.scope.agent_portfolio, "get_model_weights"):
-            model_weights = self.scope.agent_portfolio.get_model_weights()
-            output["model_weights"] = model_weights
-            output["model_update_metadata"] = {
-                "update_format": "hospital-local-metrics-with-weights",
-                "has_model_weights": True,
-            }
         # Debug print for metrics.per_agent
         per_agent_metrics = output.get("metrics", {}).get("per_agent", {})
         logging.debug(f"[DEBUG] Hospital {self.hospital_id} metrics.per_agent: {per_agent_metrics}")
@@ -647,13 +644,7 @@ class HospitalNode(HospitalLifecycleContract):
         self.metrics_store["global_update_applied"] = True
 
         # Attempt model weights sync if available
-        model_weights = global_state.get("model_weights") if isinstance(global_state, dict) else None
-        if model_weights and self.scope.agent_portfolio is not None and hasattr(self.scope.agent_portfolio, "set_model_weights"):
-            try:
-                self.scope.agent_portfolio.set_model_weights(model_weights)
-                self.metrics_store["model_weights_synced"] = True
-            except Exception:
-                self.metrics_store["model_weights_synced"] = False
+        # No model weights are used in the pure AI-agent workflow.
 
     # Note: `evaluate()` is already implemented earlier in this class (line ~235).
     # The duplicate implementation was intentionally removed to avoid method override confusion and enforce a single evaluation contract.
