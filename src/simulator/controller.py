@@ -50,10 +50,7 @@ def make_hospitals(config, data_pipeline):
     hospitals = {}
     for hid in hospital_ids:
         patterns = {
-            ct: create_thinking_pattern(
-                agent_patterns[ct],
-                deep_learning_epochs=num_epoch,
-            )
+            ct: create_thinking_pattern(agent_patterns[ct])
             for ct in agent_patterns
         }
         portfolio = AgentPortfolio(initial_patterns=patterns)

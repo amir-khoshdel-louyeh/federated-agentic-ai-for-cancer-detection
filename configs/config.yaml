@@ -15,7 +15,7 @@ cancer_types:
 
 # Datasets loaded and used to create the local hospital sets.
 enabled_datasets:
-  - ISIC2019
+  - HAM10000
 
 ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
 isic_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_GroundTruth.csv'
