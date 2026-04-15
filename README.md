@@ -230,7 +230,7 @@ The pipeline now supports a centralized, configurable setup from `configs/config
   - `malignant_ham` (HAM10000 malignant class labels, lowercase)
   - `malignant_isic` (ISIC malignant labels, uppercase)
 - `agents.types`: active agent subtype list
-- `agents.patterns.default_mapping`: maps each cancer type to a thinking pattern (e.g. `BCC: ai_agent`)
+- `agents.patterns.default_mapping`: maps each cancer type to a thinking pattern; in the AI-agent workflow this should be `ai_agent` for every enabled cancer type.
 - `agents.patterns.pattern_params`: per-pattern hyperparameters, including:
   - `ai_agent`: local LLM prompt parameters, if needed
 

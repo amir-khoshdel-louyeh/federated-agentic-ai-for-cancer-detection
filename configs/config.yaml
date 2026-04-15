@@ -123,6 +123,7 @@ agents:
     available:
       - ai_agent
 
+    # For the current LLM-based workflow, every cancer type is mapped to ai_agent.
     default_mapping:
       CANCER: ai_agent
       BCC: ai_agent
