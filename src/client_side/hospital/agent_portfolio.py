@@ -25,6 +25,8 @@ class AgentPortfolio:
         initial_patterns: Mapping[str, ThinkingPattern | Sequence[ThinkingPattern]] | None = None,
         cancer_types: tuple[str, ...] | None = None,
     ) -> None:
+        if cancer_types is None and initial_patterns is not None:
+            cancer_types = tuple(sorted({str(key).strip().upper() for key in initial_patterns.keys() if str(key).strip()}))
         self._cancer_types = tuple(cancer_types) if cancer_types else get_cancer_types(None)
         self._validate_cancer_types(self._cancer_types)
         patterns = self._normalize_initial_patterns(initial_patterns)

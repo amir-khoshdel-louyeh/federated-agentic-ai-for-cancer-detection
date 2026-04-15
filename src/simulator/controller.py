@@ -6,6 +6,7 @@ from src.client_side.hospital.hospital_node import HospitalNode
 from src.client_side.hospital.data_pipeline import LocalDataPipeline
 from src.client_side.hospital.orchestrator import FederatedRoundOrchestrator
 from src.client_side.hospital.pattern_factory import create_thinking_pattern
+from src.client_side.hospital.config_helpers import get_cancer_types
 
 
 
@@ -61,7 +62,10 @@ def make_hospitals(config, data_pipeline):
             )
             for ct in agent_patterns
         }
-        portfolio = AgentPortfolio(initial_patterns=patterns)
+        portfolio = AgentPortfolio(
+            initial_patterns=patterns,
+            cancer_types=get_cancer_types(config),
+        )
         # Each hospital gets its own pipeline with correct ids
         pipeline = LocalDataPipeline(
             hospital_id=hid,

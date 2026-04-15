@@ -72,7 +72,7 @@ preprocessing:
     normalize: imagenet  # options: minmax, imagenet
 
 sampling:
-  total_samples: 1200
+  total_samples: 40
   random_seed: 42
 
 # ========================

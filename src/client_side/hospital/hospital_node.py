@@ -137,6 +137,11 @@ class HospitalNode(HospitalLifecycleContract):
             return self.decision_thresholds[key]
         return self.decision_threshold
 
+    def _detection_mode(self) -> str:
+        if not self.config:
+            return "detect_then_type"
+        return str(self.config.get("detection", {}).get("mode", "detect_then_type")).strip()
+
     def _threshold_tuning_enabled(self) -> bool:
         if not self.config:
             return False
@@ -211,7 +216,10 @@ class HospitalNode(HospitalLifecycleContract):
         max_local_samples = int(self.config.get("training", {}).get("max_local_samples", 0)) if self.config else 0
         random_state = int(getattr(self.dataset_handler, "random_state", 42))
 
+        detection_mode = self._detection_mode()
         for cancer_type in self.scope.agent_portfolio.cancer_types:
+            if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
+                continue
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             if not isinstance(agent, SkinCancerAgent):
                 raise TypeError(f"Portfolio agent for {cancer_type} must be a SkinCancerAgent.")
@@ -335,7 +343,10 @@ class HospitalNode(HospitalLifecycleContract):
         test_probabilities: dict[str, np.ndarray] = {}
         test_uncertainties: dict[str, np.ndarray] = {}
 
+        detection_mode = self._detection_mode()
         for cancer_type, pattern_name in selected_patterns.items():
+            if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
+                continue
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             x_val, y_val = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
             x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
@@ -357,7 +368,10 @@ class HospitalNode(HospitalLifecycleContract):
             else:
                 test_uncertainties[cancer_type] = np.full(0, 1.0, dtype=np.float32)
 
+        detection_mode = self._detection_mode()
         for cancer_type, pattern_name in selected_patterns.items():
+            if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
+                continue
             prediction_key = f"{cancer_type.lower()}::{pattern_name}"
             selected_performance[cancer_type] = {
                 "pattern": pattern_name,
@@ -419,7 +433,10 @@ class HospitalNode(HospitalLifecycleContract):
         selected_patterns = self.metrics_store.get("selected_patterns", self.scope.agent_portfolio.selected_patterns())
         selected_performance = {}
 
+        detection_mode = self._detection_mode()
         for cancer_type, pattern_name in selected_patterns.items():
+            if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
+                continue
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             if str(cancer_type).strip().upper() == "CANCER":
                 y_test = np.asarray([1 if is_malignant_label(label, self.config) else 0 for label in cancer_external], dtype=np.int64)

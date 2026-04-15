@@ -53,12 +53,26 @@ def choose_agent_mode() -> str:
 	return "built_in"
 
 
+def choose_detection_mode() -> str:
+	print("=== Choose cancer detection flow ===")
+	print("1) Only cancer detector")
+	print("2) Cancer detector + other agents")
+	selection = input("Select mode [1/2]: ").strip().lower()
+	if selection in {"2", "2)", "other", "both", "cancer detector + other agents"}:
+		print("Using cancer detector + other agents.")
+		return "detect_then_type"
+	print("Using cancer detector only.")
+	return "detect_only"
+
+
 def main():
 	# Step 1: Load config.yaml
 	config = load_config()
 	configure_logging(config)
 	confirm_previous_history()
 	mode = choose_agent_mode()
+	detection_mode = choose_detection_mode()
+	config.setdefault("detection", {})["mode"] = detection_mode
 
 	if mode == "library":
 		from src.client_side.hospital.config_helpers import get_cancer_types
