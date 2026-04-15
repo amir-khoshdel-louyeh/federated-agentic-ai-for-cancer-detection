@@ -24,7 +24,7 @@ cancer_types:
 
 # Datasets loaded and used to create the local hospital sets.
 enabled_datasets:
-  - ISIC2019
+  - HAM10000
 
 ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
 isic_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_GroundTruth.csv'
@@ -71,7 +71,9 @@ augmentation:
   num_augmented_copies: 0
 
 preprocessing:
-  enabled: false
+  enabled: true
+  mode: tabular  # options: tabular, image
+  target_encoding: binary  # options: binary, dx
 
 sampling:
   total_samples: 6000
@@ -118,22 +120,13 @@ agents:
 
   patterns:
     available:
-      - pretrained_library
+      - ai_agent
 
     default_mapping:
-      BCC: pretrained_library
-      SCC: pretrained_library
-      MELANOMA: pretrained_library
-      AKIEC: pretrained_library
-
-    pattern_params:
-      pretrained_library:
-        max_iter: 300
-        learning_rate: 0.05
-        max_depth: 8
-        l2_regularization: 1.5 
-        class_weight: balanced
-        random_state: 42
+      BCC: ai_agent
+      SCC: ai_agent
+      MELANOMA: ai_agent
+      AKIEC: ai_agent
 
     allow_dynamic_switch: false
 
@@ -149,6 +142,13 @@ finalizer:
 # ========================
 
 meta_agent:
+  provider: local
+  api_key: null
+  local_model_path: null
+  local_llm:
+    base_url: "http://localhost:11434/v1"
+    model_name: "llama3.1:8b"
+    temperature: 0.0
   local:
     enable: true
     weighting_strategy: adaptive

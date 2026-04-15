@@ -50,7 +50,7 @@ def delete_existing_artifacts() -> None:
 def choose_agent_mode() -> str:
 	logging.info("Agent mode forced to AI-agent only.")
 	print("=== Agent mode forced to AI-agent only ===")
-	return "built_in"
+	return "ai_agent"
 
 
 def choose_detection_mode() -> str:
@@ -77,16 +77,10 @@ def main():
 	from src.client_side.hospital.config_helpers import get_cancer_types
 	config.setdefault("agents", {}).setdefault("patterns", {})
 	cancer_types = get_cancer_types(config)
-	if mode == "library":
-		config["agents"]["patterns"]["default_mapping"] = {
-			cancer_type: "pretrained_library" for cancer_type in cancer_types
-		}
-		logging.info("Using pretrained library agent strategy for all specialists.")
-	else:
-		config["agents"]["patterns"]["default_mapping"] = {
-			cancer_type: "ai_agent" for cancer_type in cancer_types
-		}
-		logging.info("Using AI-agent mode for all specialists.")
+	config["agents"]["patterns"]["default_mapping"] = {
+		cancer_type: "ai_agent" for cancer_type in cancer_types
+	}
+	logging.info("Using AI-agent mode for all specialists.")
 
 
 	# Step 2: Initialize system
@@ -134,11 +128,11 @@ def main():
 		logging.info(f"Running k-fold cross-validation: {k_folds} folds")
 		run_k_fold_experiment(config)
 	else:
-		logging.info("Starting federated training...")
-		print("Starting federated training...")
+		logging.info("Starting federated AI-agent evaluation...")
+		print("Starting federated AI-agent evaluation...")
 		train_system(config, hospitals)
-		logging.info("Training complete.")
-		print("Training complete.")
+		logging.info("AI-agent evaluation complete.")
+		print("AI-agent evaluation complete.")
 		validation_system(hospitals)
 		logging.info("Running evaluation on test data...")
 		print("Running evaluation on test data...")

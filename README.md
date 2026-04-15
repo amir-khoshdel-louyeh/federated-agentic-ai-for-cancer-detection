@@ -270,14 +270,11 @@ python -m src.hospital.main \
 
 - `outputs/metrics.json`: per-agent and ensemble metrics (accuracy, f1, auc, weights)
 - `outputs/predictions.csv`: test predictions and probabilities per agent
-## Pre-trained and high-quality agents
+## AI-agent default workflow
 
-This repository now uses `pretrained_library` in `src/client_side/agents/library_pattern.py`.
-- Configure via `configs/config.yaml` under `agents.patterns.default_mapping` (e.g., `BCC: pretrained_library`).
-- Save a trained model via `AgentPortfolio.save_all_models()`.
-- Load a pre-trained model via `ThinkingPattern.load_model()`.
+This repository now defaults to `ai_agent` for all cancer types.
+- Configure via `configs/config.yaml` under `agents.patterns.available` and `agents.patterns.default_mapping`.
+- `ai_agent` relies on `AIThinkingPattern.predict_proba()` and local/OpenAI reasoning.
+- `fit()` remains a no-op for `AIThinkingPattern`; no classical model weights are required.
 
-To use pre-trained weights in simulations:
-1. Train one hospital once with data and persist the model path.
-2. Set `pretrained_path` in your agent factory or pattern setup (future extension).
-3. Use `pretrained_library` as a thinking pattern.
+`pretrained_library` remains available as a legacy option but is not the default AI-agent configuration.
