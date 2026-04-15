@@ -152,6 +152,7 @@ class HospitalNode(HospitalLifecycleContract):
         val_labels: dict[str, np.ndarray],
         val_predictions: dict[str, np.ndarray],
     ) -> dict[str, float]:
+        """Tune per-cancer thresholds using validation predictions and preserve AI-agent evaluation behavior."""
         tuned: dict[str, float] = {}
         tuning_cfg = (self.config.get("training", {}) or {}).get("threshold_tuning", {}) or {}
         rare_classes = {
@@ -328,7 +329,11 @@ class HospitalNode(HospitalLifecycleContract):
         self.metrics_store["lifecycle_state"] = "trained"
 
     def evaluate(self) -> dict[str, Any]:
-        """Evaluate all fixed cancer agents and store metrics for validation and test splits."""
+        """Evaluate all fixed cancer agents and store metrics for validation and test splits.
+
+        This evaluation pipeline is preserved for the AI-agent workflow and uses tuned
+        decision thresholds when threshold tuning is enabled.
+        """
         if self.scope.data is None:
             raise RuntimeError("Call initialize() before evaluate().")
         if self.scope.agent_portfolio is None:
