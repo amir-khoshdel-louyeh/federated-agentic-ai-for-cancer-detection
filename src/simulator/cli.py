@@ -74,15 +74,18 @@ def main():
 	detection_mode = choose_detection_mode()
 	config.setdefault("detection", {})["mode"] = detection_mode
 
+	from src.client_side.hospital.config_helpers import get_cancer_types
+	config.setdefault("agents", {}).setdefault("patterns", {})
+	cancer_types = get_cancer_types(config)
 	if mode == "library":
-		from src.client_side.hospital.config_helpers import get_cancer_types
-		config.setdefault("agents", {}).setdefault("patterns", {})
-		cancer_types = get_cancer_types(config)
 		config["agents"]["patterns"]["default_mapping"] = {
 			cancer_type: "pretrained_library" for cancer_type in cancer_types
 		}
 		logging.info("Using pretrained library agent strategy for all specialists.")
 	else:
+		config["agents"]["patterns"]["default_mapping"] = {
+			cancer_type: "ai_agent" for cancer_type in cancer_types
+		}
 		logging.info("Using AI-agent mode for all specialists.")
 
 

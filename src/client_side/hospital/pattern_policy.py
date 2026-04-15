@@ -26,8 +26,8 @@ def _extract_default_mapping_from_config(config: Optional[dict]) -> dict:
             pass
 
     cancer_types = get_cancer_types(config)
-    # fallback to pretrained_library for each configured cancer type
-    return {ct: "pretrained_library" for ct in cancer_types}
+    # fallback to ai_agent for each configured cancer type
+    return {ct: "ai_agent" for ct in cancer_types}
 
 @dataclass
 class StaticPatternPolicy:
