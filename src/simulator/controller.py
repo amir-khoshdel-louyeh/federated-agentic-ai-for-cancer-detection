@@ -279,7 +279,9 @@ def train_system(config, hospitals, save_history=False, save_models=False):
             _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
             print(f"Training completed. Restoring best model from epoch {best_epoch}." )
 
-    # After training, optionally save all models for each hospital to outputs/system
+    # After training, optionally save all models for each hospital to outputs/system.
+    # For the pure AI-agent workflow, model persistence is optional and
+    # will no-op for AIThinkingPattern because there are no classical weights.
     if save_models:
         system_dir = Path("outputs/system")
         system_dir.mkdir(parents=True, exist_ok=True)

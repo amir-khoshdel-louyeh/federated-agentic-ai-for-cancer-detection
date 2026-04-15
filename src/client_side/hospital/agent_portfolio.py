@@ -47,6 +47,11 @@ class AgentPortfolio:
             self._agents[cancer_type] = cls(thinking_pattern=patterns[cancer_type])
 
     def save_all_models(self, out_dir: str, hospital_id: str) -> None:
+        """Persist all current thinking patterns for each specialist agent.
+
+        For pure AI-agent workflows, this is effectively a no-op because
+        `AIThinkingPattern.save_model()` does not persist model weights.
+        """
         import os
         os.makedirs(out_dir, exist_ok=True)
         for cancer_type in self._cancer_types:
@@ -59,6 +64,11 @@ class AgentPortfolio:
                 pattern.save_model(file_base)
 
     def load_all_models(self, out_dir: str, hospital_id: str) -> None:
+        """Load persisted thinking patterns for each specialist agent.
+
+        For pure AI-agent workflows, this is effectively a no-op because
+        `AIThinkingPattern.load_model()` does not restore classical model weights.
+        """
         import os
         for cancer_type in self._cancer_types:
             agent = self._agents[cancer_type]
