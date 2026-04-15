@@ -25,7 +25,7 @@ from .contracts import (
     PatternPolicyContract,
 )
 from .agent_portfolio import AgentPortfolio
-from .config_helpers import get_cancer_types
+from .config_helpers import get_cancer_types, is_malignant_label
 from .data_pipeline import LocalDataPipeline, LocalHospitalData
 from .hospital_env import VirtualHospital
 from .output_schema import build_hospital_output
@@ -421,7 +421,10 @@ class HospitalNode(HospitalLifecycleContract):
 
         for cancer_type, pattern_name in selected_patterns.items():
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
-            y_test = (np.asarray(cancer_external, dtype=str) == cancer_type.upper()).astype(np.int64)
+            if str(cancer_type).strip().upper() == "CANCER":
+                y_test = np.asarray([1 if is_malignant_label(label, self.config) else 0 for label in cancer_external], dtype=np.int64)
+            else:
+                y_test = (np.asarray(cancer_external, dtype=str) == cancer_type.upper()).astype(np.int64)
             if x_external.shape[0] == 0:
                 test_probs = np.array([])
             else:

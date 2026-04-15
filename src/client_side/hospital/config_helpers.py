@@ -54,3 +54,13 @@ def get_malignant_isic(config: dict | None = None) -> set[str]:
     if isinstance(isic, (list, tuple, set)) and isic:
         return {str(x).strip().upper() for x in isic if str(x).strip()}
     return DEFAULT_MALIGNANT_ISIC
+
+
+def is_malignant_label(label: str, config: dict | None = None) -> bool:
+    normalized = str(label).strip().upper()
+    if not normalized:
+        return False
+
+    malignant_ham = {item.upper() for item in get_malignant_ham(config)}
+    malignant_isic = get_malignant_isic(config)
+    return normalized in malignant_ham or normalized in malignant_isic

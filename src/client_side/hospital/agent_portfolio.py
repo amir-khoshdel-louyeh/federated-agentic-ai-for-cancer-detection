@@ -8,6 +8,7 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from ..agents import (
     AKIECAgent,
     BCCAgent,
+    CancerDetectionAgent,
     MelanomaAgent,
     SCCAgent,
     SkinCancerAgent,
@@ -28,6 +29,7 @@ class AgentPortfolio:
         self._validate_cancer_types(self._cancer_types)
         patterns = self._normalize_initial_patterns(initial_patterns)
         agent_class_map = {
+            "CANCER": CancerDetectionAgent,
             "BCC": BCCAgent,
             "SCC": SCCAgent,
             "MELANOMA": MelanomaAgent,

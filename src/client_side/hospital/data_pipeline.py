@@ -34,8 +34,14 @@ class LocalHospitalData:
     ) -> tuple[np.ndarray, np.ndarray]:
         """Return split features with one-vs-rest labels or only positive-class rows."""
         normalized = _normalize_cancer_type(cancer_type, self.cancer_types)
-        x_split, _ = self._split_xy(split)
+        x_split, y_split = self._split_xy(split)
         split_labels = self._split_cancer_labels(split)
+
+        if normalized == "CANCER":
+            if positive_only:
+                mask = y_split == 1
+                return x_split[mask], np.ones(mask.sum(), dtype=np.int64)
+            return x_split, y_split.astype(np.int64)
 
         if positive_only:
             mask = split_labels == normalized

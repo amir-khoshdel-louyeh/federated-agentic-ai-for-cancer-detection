@@ -7,7 +7,9 @@
 
 # Optional explicit set of cancer types supported by this run.
 # If omitted, code defaults to [BCC, SCC, MELANOMA, AKIEC].
+# Add CANCER when you want a top-level cancer detection step.
 cancer_types:
+  - CANCER
   - BCC
   - SCC
   - MELANOMA
@@ -105,6 +107,11 @@ federation:
 # AGENT CONFIGURATION
 # ========================
 
+detection:
+  enabled: true
+  mode: detect_then_type  # options: detect_only, detect_then_type
+  decision_threshold: 0.5
+
 agents:
   types:
     - akiec_agent
@@ -117,6 +124,7 @@ agents:
       - ai_agent
 
     default_mapping:
+      CANCER: ai_agent
       BCC: ai_agent
       SCC: ai_agent
       MELANOMA: ai_agent
