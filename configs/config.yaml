@@ -144,11 +144,13 @@ finalizer:
 # ========================
 
 meta_agent:
-  provider: local
+  provider: local  # options: local, openai, auto
+  api_key: null  # optional OpenAI API key; can also be set via OPENAI_API_KEY
+  local_model_path: null  # optional local transformers model path if not using Ollama
   local_llm:
     base_url: "http://localhost:11434/v1"
     model_name: "llama3.1:8b"
-    temperature: 0
+    temperature: 0.0
   local:
     enable: true
     weighting_strategy: adaptive
