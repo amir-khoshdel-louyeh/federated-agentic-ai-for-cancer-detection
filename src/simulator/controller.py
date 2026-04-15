@@ -112,35 +112,14 @@ def _compute_validation_f1_score(validation_reports):
     return float(sum(scores) / len(scores))
 
 
-def _save_epoch_checkpoint(hospitals, checkpoint_dir):
-    checkpoint_dir = Path(checkpoint_dir)
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    for hid, hospital in hospitals.items():
-        if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
-            portfolio = hospital.scope.agent_portfolio
-            if hasattr(portfolio, "save_all_models"):
-                portfolio.save_all_models(str(checkpoint_dir), hid)
-
-
-def _restore_epoch_checkpoint(hospitals, checkpoint_dir):
-    checkpoint_dir = Path(checkpoint_dir)
-    if not checkpoint_dir.exists():
-        raise FileNotFoundError(f"Checkpoint directory not found: {checkpoint_dir}")
-    for hid, hospital in hospitals.items():
-        if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
-            portfolio = hospital.scope.agent_portfolio
-            if hasattr(portfolio, "load_all_models"):
-                portfolio.load_all_models(str(checkpoint_dir), hid)
-
-
 def train_system(config, hospitals, save_history=False, save_models=False):
-    """Run federated training rounds.
+    """Run federated AI-agent evaluation rounds.
 
     Args:
         config (dict): configuration object.
         hospitals (dict): hospital_id -> HospitalNode.
         save_history (bool): if True, writes per-round metrics and decision files.
-        save_models (bool): if True, saves local models at end.
+        save_models (bool): ignored in pure AI-agent workflows.
 
     Returns:
         FederatedRoundOrchestrator
@@ -196,7 +175,6 @@ def train_system(config, hospitals, save_history=False, save_models=False):
     early_stop_threshold = config.get("simulation", {}).get("early_stop_threshold")
     early_stop_metric = config.get("simulation", {}).get("early_stop_metric", "loss")
     early_stop_patience = int(config.get("simulation", {}).get("early_stop_patience", 10))
-    checkpoint_base = Path(config.get("output", {}).get("checkpoint_dir", "outputs/checkpoints"))
 
     def validation_callback(hospitals_to_validate):
         validation_result = validation_system(
@@ -267,47 +245,6 @@ def train_system(config, hospitals, save_history=False, save_models=False):
     best_epoch = out.get("best_epoch")
     should_stop = out.get("stopped_early", False)
 
-    if best_epoch is not None:
-        _save_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
-
-        if should_stop:
-            logging.info(f"Early stopping triggered at epoch {best_epoch}. Restoring best model from epoch {best_epoch}.")
-            _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
-            print(f"Early stopping triggered at epoch {best_epoch}. Restoring best model from epoch {best_epoch}.")
-        else:
-            logging.info(f"Training completed. Restoring best model from epoch {best_epoch}.")
-            _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
-            print(f"Training completed. Restoring best model from epoch {best_epoch}." )
-
-    # After training, optionally save all models for each hospital to outputs/system.
-    # For the pure AI-agent workflow, model persistence is optional and
-    # will no-op for AIThinkingPattern because there are no classical weights.
-    if save_models:
-        system_dir = Path("outputs/system")
-        system_dir.mkdir(parents=True, exist_ok=True)
-        for hid, hospital in hospitals.items():
-            if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
-                portfolio = hospital.scope.agent_portfolio
-                if hasattr(portfolio, "save_all_models"):
-                    portfolio.save_all_models(str(system_dir), hid)
-
-    return orchestrator
-
-    # on completion, if early stop was not triggered, optionally restore best model
-    if best_epoch is not None and (not should_stop):
-        logging.info(f"Training completed. Restoring best model from epoch {best_epoch}.")
-        print(f"Training completed. Restoring best model from epoch {best_epoch}." )
-        _restore_epoch_checkpoint(hospitals, checkpoint_base / f"epoch_{best_epoch}")
-
-    # After training, optionally save all models for each hospital to outputs/system
-    if save_models:
-        system_dir = Path("outputs/system")
-        system_dir.mkdir(parents=True, exist_ok=True)
-        for hid, hospital in hospitals.items():
-            if hasattr(hospital, "scope") and hasattr(hospital.scope, "agent_portfolio"):
-                portfolio = hospital.scope.agent_portfolio
-                if hasattr(portfolio, "save_all_models"):
-                    portfolio.save_all_models(str(system_dir), hid)
     return orchestrator
 
 def test_system(hospitals):

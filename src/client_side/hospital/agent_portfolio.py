@@ -46,39 +46,6 @@ class AgentPortfolio:
                 raise ValueError(f"No agent class known for cancer type: {cancer_type}") from exc
             self._agents[cancer_type] = cls(thinking_pattern=patterns[cancer_type])
 
-    def save_all_models(self, out_dir: str, hospital_id: str) -> None:
-        """Persist all current thinking patterns for each specialist agent.
-
-        For pure AI-agent workflows, this is effectively a no-op because
-        `AIThinkingPattern.save_model()` does not persist model weights.
-        """
-        import os
-        os.makedirs(out_dir, exist_ok=True)
-        for cancer_type in self._cancer_types:
-            agent = self._agents[cancer_type]
-            patterns = getattr(agent, "thinking_patterns", [getattr(agent, "_thinking_pattern", None)])
-            for pattern in patterns:
-                if pattern is None:
-                    continue
-                file_base = os.path.join(out_dir, f"{hospital_id}_{cancer_type}_{pattern.name}")
-                pattern.save_model(file_base)
-
-    def load_all_models(self, out_dir: str, hospital_id: str) -> None:
-        """Load persisted thinking patterns for each specialist agent.
-
-        For pure AI-agent workflows, this is effectively a no-op because
-        `AIThinkingPattern.load_model()` does not restore classical model weights.
-        """
-        import os
-        for cancer_type in self._cancer_types:
-            agent = self._agents[cancer_type]
-            patterns = getattr(agent, "thinking_patterns", [getattr(agent, "_thinking_pattern", None)])
-            for pattern in patterns:
-                if pattern is None:
-                    continue
-                file_base = os.path.join(out_dir, f"{hospital_id}_{cancer_type}_{pattern.name}")
-                pattern.load_model(file_base)
-
     def _validate_cancer_types(self, cancer_types: tuple[str, ...]) -> None:
         if not cancer_types:
             raise ValueError("cancer_types must not be empty")

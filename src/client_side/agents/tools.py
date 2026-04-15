@@ -84,7 +84,7 @@ class VisualAnalysisTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Re-process a lesion image using a different pre-trained library model."
+        return "Re-process a lesion image using an alternate reasoning model or configuration."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -101,7 +101,7 @@ class VisualAnalysisTool(Tool):
             },
             "library_model": {
                 "type": "string",
-                "description": "The name of the alternate pretrained library model to use.",
+                "description": "The name of the alternate reasoning model to use.",
                 "required": False,
             },
         }
@@ -109,10 +109,10 @@ class VisualAnalysisTool(Tool):
     def execute(self, **kwargs: Any) -> dict[str, Any]:
         lesion_type = kwargs.get("lesion_type", "melanoma")
         image_id = kwargs.get("image_id")
-        library_model = kwargs.get("library_model", "pretrained_library")
+        library_model = kwargs.get("library_model", "alternate_reasoning")
         summary = (
             f"Reprocessed the lesion with {library_model}. "
-            f"The alternate library suggests a second opinion for {lesion_type}."
+            f"The alternate reasoning configuration suggests a second opinion for {lesion_type}."
         )
         if image_id:
             summary += f" Image id: {image_id}."

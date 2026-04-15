@@ -1,14 +1,14 @@
-# Hybrid Agentic AI with Federated Learning for Collaborative Cancer Detection
+# Hybrid Agentic AI for Collaborative Cancer Detection
 
 ## Overview
 
-This project proposes a next-generation AI system for cancer detection that combines:
+This project proposes a next-generation AI-agent system for cancer detection that combines:
 
 - Agentic AI (multi-agent systems)
-- Federated Learning (FL)
+- LLM reasoning over structured clinical metadata
 - Privacy-preserving techniques
 
-The goal is to enable multiple hospitals to collaboratively build high-quality cancer detection systems without sharing sensitive patient data.
+The goal is to enable multiple hospitals to compare AI-agent evaluations without sharing sensitive patient data.
 
 ## Installation
 
@@ -54,22 +54,22 @@ However, real-world medical AI faces several constraints:
 
 ## Proposed Solution
 
-We design a **Hybrid Agentic AI system with Federated Learning**, where:
+We design an **AI-agent-first system** where each hospital uses a shared LLM reasoning pattern to make lesion-level predictions locally.
 
-- Each hospital trains local AI agents
-- Only model updates (not raw data) are shared
-- A global model is built collaboratively
-- A Meta-Agent Controller dynamically selects the best-performing agents
+- Each hospital runs an `ai_agent` that reasons over clinical metadata
+- Raw data stays on-site
+- A central policy layer aggregates evaluation metrics and reweights specialists
+- A Meta-Agent Controller selects the best reasoning strategy per hospital
 
 ## System Architecture
 
 ### 1. Local Agentic AI (Per Hospital)
 
-Each hospital runs a lightweight LLM-based AI agent using local Ollama inference.
+Each hospital runs a lightweight LLM-based AI agent using local Ollama or OpenAI inference.
 
 This is an LLM reasoning-based workflow rather than a classical machine learning training pipeline; `ai_agent` uses `predict_proba()` to query the LLM and `fit()` is a no-op.
 
-- **AI Agent**: uses Llama 3.1 8B via Ollama to reason over clinical metadata and output a probability plus reasoning.
+- **AI Agent**: uses the configured LLM to reason over normalized clinical features and emit a probability plus reasoning.
 
 Each agent outputs:
 
@@ -77,11 +77,11 @@ Each agent outputs:
 - Confidence / uncertainty estimate
 - Structured clinical reasoning
 
-### 2. Federated Learning Layer
+### 2. Performance Aggregation Layer
 
-- Local models are trained on private hospital data
-- Only weights/gradients are shared
-- A central aggregator builds the global model
+- Hospitals share only evaluation metrics, not raw patient data
+- A central aggregator uses these metrics to compare agent performance
+- The Meta-Agent Controller assigns weights and selects lead strategies
 
 ### 3. Meta-Agent Controller
 
@@ -89,32 +89,23 @@ Each agent outputs:
 - Assigns dynamic weights to agents
 - Selects optimal strategies per hospital
 
-### 4. Global Model
-
-- Combines knowledge from all hospitals
-- Improves generalization across distributed datasets
-- Continuously updated through FL rounds
-
 ## Workflow
 
-1. Patient data remains inside each hospital.
-2. Local agents train and make predictions.
-3. Model updates are sent to the federated aggregator.
-4. The global model is updated.
-5. The improved global model is redistributed to hospitals.
+1. Patient metadata stays inside each hospital.
+2. Each `ai_agent` reasons locally and outputs probability and rationale.
+3. Hospitals share evaluation summaries, not raw data.
+4. The global policy layer updates agent weighting and selection.
+5. The selected agents are used for downstream evaluation.
 
 ## Aggregation Algorithms
 
-- **FedAvg**: standard weighted averaging
-- **FedProx**: handles heterogeneous client data
-- **Adaptive Aggregation**: uses agent confidence/performance
-- **Secure Aggregation**: protects model updates during aggregation
+- **No-operation**: single-hospital evaluation only
+- **Adaptive Aggregation**: uses agent confidence/performance to weight hospital evaluations
 
 ## Security and Privacy
 
-- **Differential Privacy (DP)**: adds noise to updates
-- **Secure Aggregation**: helps prevent reconstruction of local data
 - **No raw data sharing** across institutions
+- **Privacy-preserving evaluation reporting** for distributed AI agents
 
 Compliance targets:
 
@@ -134,17 +125,17 @@ Compliance targets:
 
 - **Hospitals**: 2-5 distributed nodes
 - **Agents**: LLM-based `ai_agent` using local Ollama inference
-- **Training**: local evaluation and federated rounds; `ai_agent` is not trained with classical model weights
+- **Workflow**: local evaluation and adaptive aggregation; `ai_agent` is not trained with classical model weights
 - **Evaluation**: local and global validation datasets
 
 ## Implementation Roadmap
 
 | Phase | Description |
 | --- | --- |
-| Phase 1 | Single hospital, multi-agent system |
-| Phase 2 | Multi-hospital FL with FedAvg |
-| Phase 3 | Adaptive aggregation + Meta-Agent |
-| Phase 4 | Add privacy (DP + Secure Aggregation) |
+| Phase 1 | Single hospital, multi-agent AI-agent evaluation |
+| Phase 2 | Multi-hospital evaluation with adaptive aggregation |
+| Phase 3 | Meta-Agent selects best-performing agents |
+| Phase 4 | Add privacy-preserving evaluation reporting |
 | Phase 5 | Scale system across hospitals |
 
 ## Expected Results
@@ -277,4 +268,4 @@ This repository now defaults to `ai_agent` for all cancer types.
 - `ai_agent` relies on `AIThinkingPattern.predict_proba()` and local/OpenAI reasoning.
 - `fit()` remains a no-op for `AIThinkingPattern`; no classical model weights are required.
 
-`pretrained_library` remains available as a legacy option but is not the default AI-agent configuration.
+Legacy `pretrained_library` support is not part of the default AI-agent workflow.

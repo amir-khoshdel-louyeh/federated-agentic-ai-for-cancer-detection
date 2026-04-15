@@ -15,7 +15,6 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 from ..agents import SkinCancerAgent
-from sklearn.utils import resample
 
 from .contracts import (
     AdaptivePatternPolicyContract,
@@ -229,52 +228,8 @@ class HospitalNode(HospitalLifecycleContract):
             x_val, y_val = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
             x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
 
-            if max_local_samples > 0 and x_train.shape[0] > max_local_samples:
-                rng = np.random.default_rng(random_state)
-                sel_idx = rng.choice(x_train.shape[0], size=max_local_samples, replace=False)
-                x_train = x_train[sel_idx]
-                y_train = y_train[sel_idx]
-
-            # Some local hospital splits can miss positives for a cancer subtype.
-            if np.unique(y_train).size < 2:
-                x_train = self.scope.data.x_train
-                y_train = self.scope.data.y_train
-                training_warnings[cancer_type] = (
-                    "Insufficient one-vs-rest label diversity in train split; "
-                    "used malignant binary labels fallback."
-                )
-
-            # Address class imbalance by oversampling the minority class for training.
-            rebalance_method = self.config.get('training', {}).get('rebalance_method', 'oversample') if self.config else 'oversample'
-            counts = np.bincount(y_train, minlength=2)
-            if counts.min() > 0:
-                imbalance_threshold = self.config.get('training', {}).get('imbalance_ratio_threshold', 1) if self.config else 1
-                ratio = max(counts) / max(1, min(counts))
-                if ratio > imbalance_threshold and rebalance_method == 'oversample':
-                    majority_label = int(np.argmax(counts))
-                    minority_label = 1 - majority_label
-                    x_majority = x_train[y_train == majority_label]
-                    y_majority = y_train[y_train == majority_label]
-                    x_minority = x_train[y_train == minority_label]
-                    y_minority = y_train[y_train == minority_label]
-                    x_minority_up, y_minority_up = resample(
-                        x_minority,
-                        y_minority,
-                        replace=True,
-                        n_samples=x_majority.shape[0],
-                        random_state=random_state,
-                    )
-                    x_train = np.vstack([x_majority, x_minority_up])
-                    y_train = np.concatenate([y_majority, y_minority_up])
-                    perm = np.random.default_rng(random_state).permutation(x_train.shape[0])
-                    x_train = x_train[perm]
-                    y_train = y_train[perm]
-                    training_warnings[cancer_type] = (
-                        training_warnings.get(cancer_type, "")
-                        + " Class imbalance oversampled minority class to balance the training set."
-                    ).strip()
-
-            # Fit is retained for interface compatibility; AIThinkingPattern is a pure LLM reasoning pattern and ignores training data.
+            # For AI-agent workflows, training data is retained only for interface compatibility.
+            # The actual reasoning step happens in AIThinkingPattern.predict_proba().
             agent.fit(x_train, y_train)
             val_probs = agent.predict_proba(x_val)
             test_probs = agent.predict_proba(x_test)

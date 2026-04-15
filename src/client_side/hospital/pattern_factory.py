@@ -14,7 +14,6 @@ class ThinkingPatternFactory:
     def __init__(self) -> None:
         self._builders: dict[str, Callable[[], ThinkingPattern]] = {
             "ai_agent": AIThinkingPattern,
-            "pretrained_library": AIThinkingPattern,
         }
 
     def create(self, name: str, pattern_config: dict | None = None) -> ThinkingPattern:
