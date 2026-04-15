@@ -65,7 +65,9 @@ We design a **Hybrid Agentic AI system with Federated Learning**, where:
 
 ### 1. Local Agentic AI (Per Hospital)
 
-Each hospital runs a lightweight LLM-based AI agent using local Ollama inference:
+Each hospital runs a lightweight LLM-based AI agent using local Ollama inference.
+
+This is an LLM reasoning-based workflow rather than a classical machine learning training pipeline; `ai_agent` uses `predict_proba()` to query the LLM and `fit()` is a no-op.
 
 - **AI Agent**: uses Llama 3.1 8B via Ollama to reason over clinical metadata and output a probability plus reasoning.
 
@@ -132,7 +134,7 @@ Compliance targets:
 
 - **Hospitals**: 2-5 distributed nodes
 - **Agents**: LLM-based `ai_agent` using local Ollama inference
-- **Training**: local epochs + federated rounds
+- **Training**: local evaluation and federated rounds; `ai_agent` is not trained with classical model weights
 - **Evaluation**: local and global validation datasets
 
 ## Implementation Roadmap
@@ -230,6 +232,7 @@ The pipeline now supports a centralized, configurable setup from `configs/config
   - `malignant_ham` (HAM10000 malignant class labels, lowercase)
   - `malignant_isic` (ISIC malignant labels, uppercase)
 - `agents.types`: active agent subtype list
+- `agents.patterns.available`: list of enabled reasoning patterns. In the current workflow this is `ai_agent` only.
 - `agents.patterns.default_mapping`: maps each cancer type to a thinking pattern; in the AI-agent workflow this should be `ai_agent` for every enabled cancer type.
 - `agents.patterns.pattern_params`: per-pattern hyperparameters, including:
   - `ai_agent`: local LLM prompt parameters, if needed

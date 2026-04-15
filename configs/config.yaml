@@ -108,9 +108,7 @@ federation:
 # ========================
 
 detection:
-  enabled: true
   mode: detect_then_type  # options: detect_only, detect_then_type
-  decision_threshold: 0.5
 
 agents:
   types:
@@ -120,6 +118,7 @@ agents:
     - scc_agent
 
   patterns:
+    # Available reasoning patterns for agents. The current workflow uses ai_agent only.
     available:
       - ai_agent
 
