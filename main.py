@@ -7,7 +7,7 @@ import logging
 CONFIG_DIR = "configs"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.yaml")
 
-DEFAULT_CONFIG = """# Federation of local hospitals agents for skin cancer detection.
+DEFAULT_CONFIG = """# AI-agent-first configuration for federated hospital cancer detection.
 # Config fields map directly to components in src/* modules.
 
 # ========================
@@ -17,6 +17,7 @@ DEFAULT_CONFIG = """# Federation of local hospitals agents for skin cancer detec
 # Optional explicit set of cancer types supported by this run.
 # If omitted, code defaults to [BCC, SCC, MELANOMA, AKIEC].
 cancer_types:
+  - CANCER
   - BCC
   - SCC
   - MELANOMA
@@ -27,8 +28,6 @@ enabled_datasets:
   - HAM10000
 
 ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
-isic_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_GroundTruth.csv'
-isic_metadata_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_Metadata.csv'
 out_dir: outputs
 
 # ========================
@@ -38,7 +37,7 @@ out_dir: outputs
 data_split:
   # Holdout test fraction for k-fold runs (k_folds > 1) or data split mode
   holdout_test: 0.1
-  k_folds: 5
+  k_folds: 1
   current_fold: 0
 
   # malignant labels per dataset to compute binary target.
@@ -47,36 +46,34 @@ data_split:
     - bcc
     - akiec
     - scc
-  malignant_isic:
-    - MEL
-    - BCC
-    - AK
-    - SCC
 
   # stratified split helps preserve malignancy ratios.
   stratify: true
   mode: tabular
 
   final_test:
-    enabled: true
-    n_samples: 100
+    enabled: false
+    n_samples: 0
     random_seed: 42
 
 augmentation:
-  enabled: true
-  rotation_prob: 0.15
-  flip_prob: 0.15
-  color_jitter_strength: 0.1
-  hair_removal_strength: 0.05
+  enabled: false
+  rotation_prob: 0.0
+  flip_prob: 0.0
+  color_jitter_strength: 0.0
+  hair_removal_strength: 0.0
   num_augmented_copies: 0
 
 preprocessing:
   enabled: true
   mode: tabular  # options: tabular, image
   target_encoding: binary  # options: binary, dx
+  image:
+    resize: [224, 224]
+    normalize: imagenet  # options: minmax, imagenet
 
 sampling:
-  total_samples: 6000
+  total_samples: 40
   random_seed: 42
 
 # ========================
@@ -87,29 +84,11 @@ hospital_ids: HOSPITAL1
 num_agents_per_hospital: 4
 
 # ========================
-# FEDERATED LEARNING SETTINGS
-# ========================
-
-federation:
-  aggregation_algorithm: no_operation
-
-  fedprox:
-    mu: 0.5
-
-  adaptive:
-    alpha: 0.5
-    beta: 0.3
-    gamma: 0.2
-    auc_weight: 0.75
-    f1_weight: 0.25
-    lifecycle_penalty: 0.35
-    warning_penalty_per_item: 0.05
-    min_reliability_score: 0.0
-    hospital_weighting: dynamic
-
-# ========================
 # AGENT CONFIGURATION
 # ========================
+
+detection:
+  mode: detect_then_type  # options: detect_only, detect_then_type
 
 agents:
   types:
@@ -123,6 +102,7 @@ agents:
       - ai_agent
 
     default_mapping:
+      CANCER: ai_agent
       BCC: ai_agent
       SCC: ai_agent
       MELANOMA: ai_agent
@@ -131,8 +111,11 @@ agents:
     allow_dynamic_switch: false
 
 # ========================
-# FINALIZER
+# FEDERATION / EVALUATION SETTINGS
 # ========================
+
+federation:
+  aggregation_algorithm: no_operation
 
 finalizer:
   threshold: 0.15
@@ -177,6 +160,7 @@ privacy:
 # ========================
 
 tracking:
+  clear_output_on_start: true
   track_per_agent: true
   track_per_hospital: true
   track_confidence: true
@@ -186,11 +170,10 @@ tracking:
   log_file_name: simulation.log
 
 # ========================
-# TRAINING
+# TRAINING / EVALUATION
 # ========================
 
 training:
-  max_local_samples: 2000
   rebalance_method: oversample
   imbalance_ratio_threshold: 1
   decision_threshold: 0.10
@@ -200,7 +183,7 @@ training:
     MELANOMA: 0.08
     AKIEC: 0.05
   threshold_tuning:
-    enabled: true
+    enabled: false
     rare_classes:
       - SCC
       - AKIEC
@@ -208,14 +191,13 @@ training:
     min_threshold: 0.01
     max_threshold: 0.35
 
-
 simulation:
-  simulate_multi: true
-  compare_all: true
-  num_rounds: 8
-  num_epoch: 3
+  simulate_multi: false
+  compare_all: false
+  num_rounds: 1
+  num_epoch: 1
   early_stop_metric: auc
-  early_stop_patience: 3
+  early_stop_patience: 1
   batch_size: 16
 
 # ========================
@@ -223,9 +205,7 @@ simulation:
 # ========================
 
 output:
-  save_global_model: true
-  save_local_models: false
-  save_metrics: true
+  history_dir: outputs/history
   """
 
 def ensure_config():

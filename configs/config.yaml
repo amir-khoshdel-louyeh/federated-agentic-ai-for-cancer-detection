@@ -1,13 +1,13 @@
-# Federation of local hospitals agents for skin cancer detection.
-# Config fields map directly to components in src/* modules.
+# AI-agent-first configuration for federated hospital cancer detection.
+# This config is designed for the current repository state, which uses
+# `ai_agent` reasoning patterns and local/OpenAI LLM inference.
 
 # ========================
 # DATA SOURCES
 # ========================
 
-# Optional explicit set of cancer types supported by this run.
-# If omitted, code defaults to [BCC, SCC, MELANOMA, AKIEC].
-# Add CANCER when you want a top-level cancer detection step.
+# Optional explicit cancer types for this run. If omitted, code defaults to
+# [BCC, SCC, MELANOMA, AKIEC]. Add CANCER when using a top-level cancer detector.
 cancer_types:
   - CANCER
   - BCC
@@ -15,13 +15,10 @@ cancer_types:
   - MELANOMA
   - AKIEC
 
-# Datasets loaded and used to create the local hospital sets.
 enabled_datasets:
   - HAM10000
 
 ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
-isic_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_GroundTruth.csv'
-isic_metadata_csv: 'src/client_side/datasets/ISIC2019/ISIC_2019_Training_Metadata.csv'
 out_dir: outputs
 
 # ========================
@@ -29,24 +26,16 @@ out_dir: outputs
 # ========================
 
 data_split:
-  # Holdout test fraction for k-fold runs (k_folds > 1) or data split mode
   holdout_test: 0.1
   k_folds: 1
   current_fold: 0
 
-  # malignant labels per dataset to compute binary target.
   malignant_ham:
     - mel
     - bcc
     - akiec
     - scc
-  malignant_isic:
-    - MEL
-    - BCC
-    - AK
-    - SCC
 
-  # stratified split helps preserve malignancy ratios.
   stratify: true
   mode: tabular
 
@@ -83,27 +72,6 @@ hospital_ids: HOSPITAL1
 num_agents_per_hospital: 4
 
 # ========================
-# FEDERATED LEARNING SETTINGS
-# ========================
-
-federation:
-  aggregation_algorithm: no_operation
-
-  fedprox:
-    mu: 0.5
-
-  adaptive:
-    alpha: 0.5
-    beta: 0.3
-    gamma: 0.2
-    auc_weight: 0.75
-    f1_weight: 0.25
-    lifecycle_penalty: 0.35
-    warning_penalty_per_item: 0.05
-    min_reliability_score: 0.0
-    hospital_weighting: dynamic
-
-# ========================
 # AGENT CONFIGURATION
 # ========================
 
@@ -118,11 +86,9 @@ agents:
     - scc_agent
 
   patterns:
-    # Available reasoning patterns for agents. The current workflow uses ai_agent only.
     available:
       - ai_agent
 
-    # For the current LLM-based workflow, every cancer type is mapped to ai_agent.
     default_mapping:
       CANCER: ai_agent
       BCC: ai_agent
@@ -133,8 +99,11 @@ agents:
     allow_dynamic_switch: false
 
 # ========================
-# FINALIZER
+# FEDERATION / EVALUATION SETTINGS
 # ========================
+
+federation:
+  aggregation_algorithm: no_operation
 
 finalizer:
   threshold: 0.15
@@ -146,11 +115,12 @@ finalizer:
 meta_agent:
   provider: local  # options: local, openai, auto
   api_key: null  # optional OpenAI API key; can also be set via OPENAI_API_KEY
-  local_model_path: null  # optional local transformers model path if not using Ollama
+  local_model_path: null  # optional local Transformers model path if not using Ollama
   local_llm:
     base_url: "http://localhost:11434/v1"
     model_name: "llama3.1:8b"
     temperature: 0.0
+
   local:
     enable: true
     weighting_strategy: adaptive
@@ -179,6 +149,7 @@ privacy:
 # ========================
 
 tracking:
+  clear_output_on_start: true
   track_per_agent: true
   track_per_hospital: true
   track_confidence: true
@@ -188,13 +159,11 @@ tracking:
   log_file_name: simulation.log
 
 # ========================
-# TRAINING
+# TRAINING / EVALUATION
 # ========================
 
 training:
-  max_local_samples: 500
   rebalance_method: oversample
-  class_weight: balanced  # options: balanced, none
   imbalance_ratio_threshold: 1
   decision_threshold: 0.10
   decision_thresholds:
@@ -211,7 +180,6 @@ training:
     min_threshold: 0.01
     max_threshold: 0.35
 
-
 simulation:
   simulate_multi: false
   compare_all: false
@@ -226,6 +194,5 @@ simulation:
 # ========================
 
 output:
-  save_global_model: true
-  save_local_models: false
-  save_metrics: true
+  history_dir: outputs/history
+

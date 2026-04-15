@@ -1,4 +1,3 @@
-import argparse
 import logging
 import os
 import shutil
@@ -16,22 +15,6 @@ from src.simulator.controller import (
 )
 
 
-def confirm_previous_history() -> None:
-	"""Ask user whether to keep or delete previous logs/output."""
-	keep_old = input("Do you want to keep existing logs/output? (y/N): ").strip().lower()
-	if keep_old in {"y", "yes"}:
-		print("Please make a backup of logs/output before continuing.")
-		continue_after_backup = input("Continue and delete all previous logs/output after backup? (y/N): ").strip().lower()
-		if continue_after_backup in {"y", "yes"}:
-			delete_existing_artifacts()
-			print("Existing logs/output removed. Continuing with clean slate.")
-		else:
-			print("Keeping existing logs/output. Continuing without deletion.")
-	else:
-		delete_existing_artifacts()
-		print("Existing logs/output removed. Continuing with clean slate.")
-
-
 def delete_existing_artifacts() -> None:
 	outputs_base = "outputs"
 	if os.path.exists(outputs_base):
@@ -47,31 +30,28 @@ def delete_existing_artifacts() -> None:
 	os.makedirs(os.path.join(outputs_base, "system"), exist_ok=True)
 	logging.info("Initialized fresh output directories.")
 
-def choose_agent_mode() -> str:
-	logging.info("Agent mode forced to AI-agent only.")
-	print("=== Agent mode forced to AI-agent only ===")
-	return "ai_agent"
 
-
-def choose_detection_mode() -> str:
-	print("=== Choose cancer detection flow ===")
-	print("1) Only cancer detector")
-	print("2) Cancer detector + other agents")
-	selection = input("Select mode [1/2]: ").strip().lower()
-	if selection in {"2", "2)", "other", "both", "cancer detector + other agents"}:
-		print("Using cancer detector + other agents.")
-		return "detect_then_type"
-	print("Using cancer detector only.")
-	return "detect_only"
+def prepare_output_environment(config: dict) -> None:
+	"""Prepare output directories using config-driven behavior."""
+	clear_on_start = bool(config.get("tracking", {}).get("clear_output_on_start", True))
+	if clear_on_start:
+		delete_existing_artifacts()
+		print("Starting with a clean output directory.")
+	else:
+		outputs_base = config.get("out_dir", "outputs")
+		os.makedirs(os.path.join(outputs_base, "logs"), exist_ok=True)
+		os.makedirs(os.path.join(outputs_base, "history"), exist_ok=True)
+		os.makedirs(os.path.join(outputs_base, "system"), exist_ok=True)
+		logging.info("Preserving existing output files and created missing directories.")
+		print("Preserving existing outputs and continuing.")
 
 
 def main():
 	# Step 1: Load config.yaml
 	config = load_config()
 	configure_logging(config)
-	confirm_previous_history()
-	mode = choose_agent_mode()
-	detection_mode = choose_detection_mode()
+	prepare_output_environment(config)
+	detection_mode = str(config.get("detection", {}).get("mode", "detect_then_type"))
 	config.setdefault("detection", {})["mode"] = detection_mode
 
 	from src.client_side.hospital.config_helpers import get_cancer_types
@@ -81,6 +61,8 @@ def main():
 		cancer_type: "ai_agent" for cancer_type in cancer_types
 	}
 	logging.info("Using AI-agent mode for all specialists.")
+	logging.info(f"Using detection mode from config: {detection_mode}")
+	print(f"Using detection mode from config: {detection_mode}")
 
 
 	# Step 2: Initialize system
