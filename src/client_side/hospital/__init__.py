@@ -1,7 +1,6 @@
 """Single-hospital multi-agent package for initial implementation."""
 
 from .agent_portfolio import AgentPortfolio
-from .artifacts import save_hospital_artifacts
 from .contracts import (
 	AdaptivePatternPolicyContract,
 	HospitalDataBundle,
@@ -18,7 +17,6 @@ from .pattern_policy import AdaptivePatternPolicy, StaticPatternPolicy
 
 __all__ = [
 	"AgentPortfolio",
-	"save_hospital_artifacts",
 	"HospitalDataBundle",
 	"HospitalScope",
 	"HospitalLifecycleContract",
