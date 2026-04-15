@@ -45,6 +45,7 @@ class AIThinkingPattern(ThinkingPattern):
 
     def fit(self, x_train: np.ndarray, y_train: np.ndarray) -> None:
         # No training required for the pure language-agent reasoning pattern.
+        # AIThinkingPattern relies on LLM inference at prediction time.
         return None
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:

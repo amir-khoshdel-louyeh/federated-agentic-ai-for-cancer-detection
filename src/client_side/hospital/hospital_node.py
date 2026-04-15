@@ -273,6 +273,7 @@ class HospitalNode(HospitalLifecycleContract):
                         + " Class imbalance oversampled minority class to balance the training set."
                     ).strip()
 
+            # Fit is retained for interface compatibility; AIThinkingPattern is a pure LLM reasoning pattern and ignores training data.
             agent.fit(x_train, y_train)
             val_probs = agent.predict_proba(x_val)
             test_probs = agent.predict_proba(x_test)
