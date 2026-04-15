@@ -162,6 +162,7 @@ def _build_features(
     age_candidates: Iterable[str],
     site_candidates: Iterable[str],
 ) -> pd.DataFrame:
+    """Create normalized tabular clinical metadata features for AI agent input."""
     out = base.copy()
 
     out["asymmetry"] = _deterministic_feature(out["image_id"], salt="asym")

@@ -120,7 +120,7 @@ class LocalDataPipeline:
         if self.config is not None and self.config.get("preprocessing", {}).get("enabled", False):
             preprocess_cfg = self.config.get("preprocessing", {})
             pipeline = PreprocessingPipeline(preprocess_cfg)
-            # Scale train/val/test sets with same parameters
+            # Scale clinical feature vectors consistently across train/val/test splits.
             splits = HospitalSplits(
                 x_train=pipeline.fit_transform(splits.x_train, splits.y_train),
                 y_train=splits.y_train,
