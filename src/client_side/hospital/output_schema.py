@@ -39,6 +39,7 @@ def build_hospital_output(
             "selected_performance": evaluation.get("selected_performance", {}),
             "candidate_pattern_comparisons": evaluation.get("candidate_pattern_comparisons", {}),
         },
+        "reasoning": evaluation.get("reasoning", {}),
         "local_summary": local_summary,
         "model_update_metadata": {
             "update_format": "hospital-local-metrics-with-weights",

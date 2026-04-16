@@ -302,6 +302,8 @@ class HospitalNode(HospitalLifecycleContract):
 
         test_probabilities: dict[str, np.ndarray] = {}
         test_uncertainties: dict[str, np.ndarray] = {}
+        val_reasoning: dict[str, list[str]] = {}
+        test_reasoning: dict[str, list[str]] = {}
 
         detection_mode = self._detection_mode()
         for cancer_type, pattern_name in selected_patterns.items():
@@ -310,18 +312,26 @@ class HospitalNode(HospitalLifecycleContract):
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             x_val, y_val = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
             x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
-            val_probs = agent.predict_proba(x_val)
-            test_probs = agent.predict_proba(x_test)
-            val_metrics[f"{cancer_type.lower()}::{pattern_name}"] = self._compute_binary_metrics(
+            val_results = agent.predict_diagnoses(x_val)
+            test_results = agent.predict_diagnoses(x_test)
+
+            val_probs = np.array([result["probability"] for result in val_results], dtype=np.float32)
+            test_probs = np.array([result["probability"] for result in test_results], dtype=np.float32)
+
+            prediction_key = f"{cancer_type.lower()}::{pattern_name}"
+            val_metrics[prediction_key] = self._compute_binary_metrics(
                 y_val,
                 val_probs,
                 threshold=self._decision_threshold_for(cancer_type),
             )
-            test_metrics[f"{cancer_type.lower()}::{pattern_name}"] = self._compute_binary_metrics(
+            test_metrics[prediction_key] = self._compute_binary_metrics(
                 y_test,
                 test_probs,
                 threshold=self._decision_threshold_for(cancer_type),
             )
+            val_reasoning[prediction_key] = [result.get("clinical_reasoning", "") for result in val_results]
+            test_reasoning[prediction_key] = [result.get("clinical_reasoning", "") for result in test_results]
+
             test_probabilities[cancer_type] = test_probs
             if x_test.shape[0] > 0:
                 test_uncertainties[cancer_type] = agent.predict_uncertainty(x_test)
@@ -362,6 +372,10 @@ class HospitalNode(HospitalLifecycleContract):
         self.metrics_store["evaluation"] = {
             "validation": val_metrics,
             "test": test_metrics,
+            "reasoning": {
+                "validation": val_reasoning,
+                "test": test_reasoning,
+            },
             "selected_performance": selected_performance,
             "candidate_pattern_comparisons": candidate_comparisons,
             "hospital_manager": hospital_manager_output,

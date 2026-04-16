@@ -89,6 +89,85 @@ class VirtualHospital:
                 )
             return train_test_split(*arrays, test_size=test_size, random_state=random_state)
 
+    def _select_iid_total_samples_for_hospital(
+        self,
+        hospital_id: str,
+        hospital_ids: list[str],
+        total_samples: int,
+        x: np.ndarray,
+        y: np.ndarray,
+        ids: np.ndarray,
+    ) -> np.ndarray:
+        """Select a stratified, deterministic subset for each hospital.
+
+        This method chooses total_samples across the full dataset while preserving
+        both malignant/benign proportions and assigning a fixed IID-like chunk to
+        each hospital.
+        """
+        num_hospitals = len(hospital_ids)
+        n_samples = total_samples // num_hospitals
+
+        if total_samples > len(y):
+            raise ValueError(f"Requested total_samples ({total_samples}) exceeds available samples ({len(y)}).")
+
+        labels, counts = np.unique(y, return_counts=True)
+        label_counts = {int(label): int(count) for label, count in zip(labels, counts)}
+        malignant_count = label_counts.get(1, 0)
+        benign_count = label_counts.get(0, 0)
+
+        if malignant_count + benign_count != len(y):
+            raise ValueError("Only binary target labels 0/1 are supported for total_samples selection.")
+
+        malignant_selected = int(round(total_samples * malignant_count / len(y)))
+        benign_selected = total_samples - malignant_selected
+
+        if malignant_count > 0 and malignant_selected == 0:
+            malignant_selected = 1
+            benign_selected = total_samples - 1
+        if benign_count > 0 and benign_selected == 0:
+            benign_selected = 1
+            malignant_selected = total_samples - 1
+
+        if malignant_selected > malignant_count or benign_selected > benign_count:
+            raise ValueError(
+                "Not enough samples available to satisfy stratified total_samples selection."
+            )
+
+        sorted_ids = np.asarray(ids, dtype=str)
+        order = np.argsort(sorted_ids, kind="stable")
+        malignant_indices = order[y[order] == 1]
+        benign_indices = order[y[order] == 0]
+
+        # Choose a stratified subset of the requested size in a deterministic way.
+        malignant_indices = malignant_indices[:malignant_selected]
+        benign_indices = benign_indices[:benign_selected]
+
+        # Compute per-hospital quotas based on the overall class ratio.
+        class_ratio = malignant_selected / total_samples if total_samples > 0 else 0.0
+        base_malignant = int(np.floor(n_samples * class_ratio))
+        remainder = malignant_selected - base_malignant * num_hospitals
+        malignant_quota = [base_malignant + (1 if i < remainder else 0) for i in range(num_hospitals)]
+        selected_indices: list[int] = []
+        malignant_cursor = 0
+        benign_cursor = 0
+        for i, hid in enumerate(hospital_ids):
+            quota_malignant = malignant_quota[i]
+            quota_benign = n_samples - quota_malignant
+            if quota_benign < 0:
+                raise ValueError("Invalid hospital quota computed for total_samples selection.")
+            if malignant_cursor + quota_malignant > len(malignant_indices):
+                raise ValueError("Not enough malignant samples for hospital selection.")
+            if benign_cursor + quota_benign > len(benign_indices):
+                raise ValueError("Not enough benign samples for hospital selection.")
+            if hid == hospital_id:
+                selected_indices = list(malignant_indices[malignant_cursor:malignant_cursor + quota_malignant])
+                selected_indices += list(benign_indices[benign_cursor:benign_cursor + quota_benign])
+                break
+            malignant_cursor += quota_malignant
+            benign_cursor += quota_benign
+
+        return np.array(sorted(selected_indices), dtype=int)
+
     def load(
         self,
         ham_metadata_csv: str | Path = None,
@@ -133,14 +212,17 @@ class VirtualHospital:
             num_hospitals = len(hospital_ids)
             if total_samples % num_hospitals != 0:
                 raise ValueError(f"Total samples ({total_samples}) must be divisible by number of hospitals ({num_hospitals}).")
-            n_samples = total_samples // num_hospitals
-            idx = hospital_ids.index(hospital_id)
-            rng = np.random.default_rng(self.random_state)
-            all_indices = np.arange(len(x))
-            rng.shuffle(all_indices)
             if total_samples > len(x):
                 raise ValueError(f"Requested total_samples ({total_samples}) exceeds available samples ({len(x)}).")
-            selected = all_indices[idx * n_samples : (idx + 1) * n_samples]
+
+            selected = self._select_iid_total_samples_for_hospital(
+                hospital_id=hospital_id,
+                hospital_ids=hospital_ids,
+                total_samples=total_samples,
+                x=x,
+                y=y,
+                ids=ids,
+            )
             x = x[selected]
             y = y[selected]
             ids = ids[selected]

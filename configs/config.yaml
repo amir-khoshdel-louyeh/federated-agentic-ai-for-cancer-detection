@@ -104,7 +104,6 @@ agents:
 
 federation:
   aggregation_algorithm: no_operation
-
 finalizer:
   threshold: 0.15
 
