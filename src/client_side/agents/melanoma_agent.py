@@ -4,6 +4,8 @@ from typing import Any
 
 import numpy as np
 
+from __future__ import annotations
+
 from .base import LLMReasoner, SkinCancerAgent, ThinkingPattern
 from .tools import SearchTool, Tool, VisualAnalysisTool
 

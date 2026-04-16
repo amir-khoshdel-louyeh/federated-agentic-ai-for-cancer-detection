@@ -4,8 +4,10 @@ from typing import Any
 
 import numpy as np
 
+from __future__ import annotations
+
 from .base import LLMReasoner, SkinCancerAgent, ThinkingPattern
-from .tools import SearchTool, Tool
+from .tools import SearchTool, VisualAnalysisTool, Tool
 
 
 class CancerDetectionAgent(SkinCancerAgent):
@@ -18,7 +20,7 @@ class CancerDetectionAgent(SkinCancerAgent):
         tools: list[Tool] | None = None,
         uncertainty_threshold: float = 0.4,
     ) -> None:
-        default_tools = tools or [SearchTool()]
+        default_tools = tools or [SearchTool(), VisualAnalysisTool()]
         super().__init__(thinking_patterns=thinking_pattern, llm_reasoner=llm_reasoner, tools=default_tools)
         self.uncertainty_threshold = uncertainty_threshold
 
