@@ -100,7 +100,7 @@ class LocalDataPipeline:
         kwargs["hospital_ids"] = self.hospital_ids
         splits = self.dataset_handler.load(**kwargs)
 
-        if self.config is not None and self.config.get("augmentation", {}).get("enabled", False):
+        if self.config is not None and self.config.get("augmentation", {}).get("enabled", False) and splits.x_train.shape[0] > 0:
             mode = self.config.get("data_split", {}).get("mode", "tabular")
             if mode in ("tabular", "combined"):
                 x_train_aug, y_train_aug = augment_dataset(splits.x_train, splits.y_train, self.config)
@@ -120,19 +120,36 @@ class LocalDataPipeline:
         if self.config is not None and self.config.get("preprocessing", {}).get("enabled", False):
             preprocess_cfg = self.config.get("preprocessing", {})
             pipeline = PreprocessingPipeline(preprocess_cfg)
-            # Scale clinical feature vectors consistently across train/val/test splits.
-            splits = HospitalSplits(
-                x_train=pipeline.fit_transform(splits.x_train, splits.y_train),
-                y_train=splits.y_train,
-                x_val=pipeline.transform(splits.x_val),
-                y_val=splits.y_val,
-                x_test=pipeline.transform(splits.x_test),
-                y_test=splits.y_test,
-                test_ids=splits.test_ids,
-                cancer_train=splits.cancer_train,
-                cancer_val=splits.cancer_val,
-                cancer_test=splits.cancer_test,
-            )
+            if splits.x_train.shape[0] == 0:
+                # No train split available in the AI-agent workflow; fit preprocessing
+                # on validation data and apply it to test data.
+                x_val_transformed = pipeline.fit_transform(splits.x_val, splits.y_val)
+                x_test_transformed = pipeline.transform(splits.x_test)
+                splits = HospitalSplits(
+                    x_train=splits.x_train,
+                    y_train=splits.y_train,
+                    x_val=x_val_transformed,
+                    y_val=splits.y_val,
+                    x_test=x_test_transformed,
+                    y_test=splits.y_test,
+                    test_ids=splits.test_ids,
+                    cancer_train=splits.cancer_train,
+                    cancer_val=splits.cancer_val,
+                    cancer_test=splits.cancer_test,
+                )
+            else:
+                splits = HospitalSplits(
+                    x_train=pipeline.fit_transform(splits.x_train, splits.y_train),
+                    y_train=splits.y_train,
+                    x_val=pipeline.transform(splits.x_val),
+                    y_val=splits.y_val,
+                    x_test=pipeline.transform(splits.x_test),
+                    y_test=splits.y_test,
+                    test_ids=splits.test_ids,
+                    cancer_train=splits.cancer_train,
+                    cancer_val=splits.cancer_val,
+                    cancer_test=splits.cancer_test,
+                )
 
         return self._to_local_data(splits)
 

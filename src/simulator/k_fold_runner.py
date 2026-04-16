@@ -3,7 +3,7 @@ from typing import Dict, Any
 from configs.config_loader import load_config
 from src.simulator.controller import (
     initialize_system,
-    train_system,
+    federated_evaluation_round,
     validation_system,
     test_system,
     test_system_on_external_data,
@@ -41,7 +41,8 @@ def run_k_fold_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     """Run k-fold cross-validation with holdout test split.
 
     This function loops over folds by setting config['data_split']['current_fold'],
-    reinitializes hospitals, and runs training+validation+testing for each fold.
+    reinitializes hospitals, and runs federated evaluation rounds with validation
+    and test evaluation for each fold.
     """
     data_split = config.get("data_split", {})
     k_folds = int(data_split.get("k_folds", 1))
@@ -56,11 +57,11 @@ def run_k_fold_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
 
         hospitals = initialize_system(config)
 
-        logging.info("Starting federated training...")
-        print("Starting federated training...")
-        train_system(config, hospitals)
-        logging.info("Training complete.")
-        print("Training complete.")
+        logging.info("Starting federated evaluation round...")
+        print("Starting federated evaluation round...")
+        federated_evaluation_round(config, hospitals)
+        logging.info("Federated evaluation round complete.")
+        print("Federated evaluation round complete.")
 
         validation_system(hospitals)
 

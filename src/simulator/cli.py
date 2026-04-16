@@ -7,7 +7,7 @@ from configs.config_loader import load_config
 from src.simulator.controller import (
 	configure_logging,
 	initialize_system,
-	train_system,
+	federated_evaluation_round,
 	test_system,
 	show_results,
 	show_log_location,
@@ -110,11 +110,11 @@ def main():
 		logging.info(f"Running k-fold cross-validation: {k_folds} folds")
 		run_k_fold_experiment(config)
 	else:
-		logging.info("Starting federated AI-agent evaluation...")
-		print("Starting federated AI-agent evaluation...")
-		train_system(config, hospitals)
-		logging.info("AI-agent evaluation complete.")
-		print("AI-agent evaluation complete.")
+		logging.info("Starting federated evaluation round...")
+		print("Starting federated evaluation round...")
+		federated_evaluation_round(config, hospitals)
+		logging.info("Federated evaluation round complete.")
+		print("Federated evaluation round complete.")
 		validation_system(hospitals)
 		logging.info("Running evaluation on test data...")
 		print("Running evaluation on test data...")

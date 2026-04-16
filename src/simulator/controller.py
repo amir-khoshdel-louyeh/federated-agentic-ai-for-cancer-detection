@@ -112,8 +112,14 @@ def _compute_validation_f1_score(validation_reports):
     return float(sum(scores) / len(scores))
 
 
-def train_system(config, hospitals, save_history=False, save_models=False):
-    """Run federated AI-agent evaluation rounds.
+def federated_evaluation_round(config, hospitals, save_history=False, save_models=False):
+    """Run federated evaluation rounds where agents reason on local data.
+
+    In this system, each round is not a traditional model training step. Instead,
+    agents evaluate and score themselves on their local hospital data. The
+    aggregator uses per-hospital performance to assign trust weights for the
+    next round, enabling weaker hospitals to benefit from stronger patterns if
+    cooperation is configured.
 
     Args:
         config (dict): configuration object.
@@ -385,7 +391,11 @@ def validation_system(hospitals, output_dir=None, early_stop_threshold=None, sav
 # Example usage in GUI:
 #   config = load_config()
 #   hospitals = initialize_system(config)
-#   orchestrator = train_system(config, hospitals)
-#   results = test_system(hospitals)
-#   show_results(results)
-#   show_log_location(config)
+    #   orchestrator = federated_evaluation_round(config, hospitals)
+    #   results = test_system(hospitals)
+    #   show_results(results)
+    #   show_log_location(config)
+
+
+# Alias for backward compatibility with legacy imports.
+train_system = federated_evaluation_round
