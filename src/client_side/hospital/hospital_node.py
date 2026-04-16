@@ -184,6 +184,80 @@ class HospitalNode(HospitalLifecycleContract):
             json.dump(entry, file, ensure_ascii=False)
             file.write("\n")
 
+    def _rewrite_inference_cache(self, entries: list[dict[str, Any]]) -> None:
+        cache_path = self._inference_cache_path()
+        self._ensure_inference_cache_dir()
+        with cache_path.open("w", encoding="utf-8") as file:
+            for entry in entries:
+                json.dump(entry, file, ensure_ascii=False)
+                file.write("\n")
+
+    def _invalidate_inference_entry(self, unique_id: str, split: str, cancer_type: str) -> bool:
+        cache_path = self._inference_cache_path()
+        if not cache_path.exists() or not unique_id:
+            return False
+
+        entries: list[dict[str, Any]] = []
+        removed = False
+        for entry in self._load_inference_entries() or []:
+            if (
+                entry.get("unique_id") == unique_id
+                and entry.get("split") == split
+                and entry.get("cancer_type") == cancer_type
+            ):
+                removed = True
+                continue
+            entries.append(entry)
+
+        if removed:
+            self._rewrite_inference_cache(entries)
+        return removed
+
+    def _invalidate_wrong_cached_entries(
+        self,
+        entries: list[dict[str, Any]],
+        cancer_type: str,
+        split: str,
+    ) -> None:
+        threshold = self._decision_threshold_for(cancer_type)
+        for entry in entries:
+            if entry.get("cache_status") == "failed":
+                continue
+
+            ground_truth = entry.get("ground_truth")
+            if ground_truth is None:
+                continue
+            try:
+                ground_truth = int(ground_truth)
+            except (TypeError, ValueError):
+                continue
+
+            probability = entry.get("probability", 0.0)
+            try:
+                probability = float(probability)
+            except (TypeError, ValueError):
+                probability = 0.0
+
+            predicted = 1 if probability >= threshold else 0
+            if predicted != ground_truth:
+                unique_id = str(entry.get("unique_id", ""))
+                if not unique_id:
+                    continue
+                if self._invalidate_inference_entry(unique_id, split, cancer_type):
+                    self.metrics_store.setdefault("cache_invalidation", []).append(
+                        {
+                            "unique_id": unique_id,
+                            "split": split,
+                            "cancer_type": cancer_type,
+                            "predicted": predicted,
+                            "ground_truth": ground_truth,
+                        }
+                    )
+                    logging.info(
+                        f"Hospital {self.hospital_id}: invalidated cached prediction {unique_id} "
+                        f"for {cancer_type} split={split} due to ground truth mismatch ({predicted}!={ground_truth})."
+                    )
+
     def _find_inference_entry(self, unique_id: str, split: str | None = None, cancer_type: str | None = None) -> dict[str, Any] | None:
         for entry in self._load_inference_entries() or ():
             if entry.get("unique_id") != unique_id:
@@ -387,6 +461,9 @@ class HospitalNode(HospitalLifecycleContract):
                 "mean_validation_uncertainty": self._mean_uncertainty_from_entries(raw_val_entries),
                 "mean_test_uncertainty": self._mean_uncertainty_from_entries(raw_test_entries),
             }
+
+            self._invalidate_wrong_cached_entries(raw_val_entries, cancer_type, split="val")
+            self._invalidate_wrong_cached_entries(raw_test_entries, cancer_type, split="test")
 
         candidate_comparisons = self._build_candidate_comparisons(val_metrics)
 
