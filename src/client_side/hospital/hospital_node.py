@@ -124,7 +124,8 @@ class HospitalNode(HospitalLifecycleContract):
 
         # Register split sizes and initial lifecycle state before training.
         self.metrics_store["split_sizes"] = {
-            "validation": int(self.scope.data.x_val.shape[0]),
+            "train": int(self.scope.data.x_train.shape[0]),
+            "val": int(self.scope.data.x_val.shape[0]),
             "test": int(self.scope.data.x_test.shape[0]),
         }
         self.metrics_store["lifecycle_state"] = "initialized"

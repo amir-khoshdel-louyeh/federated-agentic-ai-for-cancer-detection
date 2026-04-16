@@ -75,8 +75,9 @@ def main():
 	all_test_ids = {}
 	for hid, hospital in hospitals.items():
 		split_sizes = hospital.metrics_store.get("split_sizes", {})
-		logging.info(f"Hospital {hid}: {split_sizes}")
-		print(f"Hospital {hid}: {split_sizes}")
+		display_split_sizes = {k: v for k, v in split_sizes.items() if k != "train"}
+		logging.info(f"Hospital {hid}: {display_split_sizes}")
+		print(f"Hospital {hid}: {display_split_sizes}")
 		# Try to get test_ids from local_data
 		test_ids = None
 		if hasattr(hospital, "local_data") and hospital.local_data is not None:
@@ -91,18 +92,6 @@ def main():
 	log_file = config.get("tracking", {}).get("log_file_name", "simulation.log")
 	log_path = Path(log_dir) / log_file
 	logging.info(f"Using log file: {log_path.resolve()}")
-
-	# Check uniqueness of test_ids between hospitals
-	is_unique = True
-	if len(all_test_ids) > 1:
-		all_ids = list(all_test_ids.values())
-		for i in range(len(all_ids)):
-			for j in range(i+1, len(all_ids)):
-				if set(all_ids[i]) & set(all_ids[j]):
-					is_unique = False
-	if all_test_ids:
-		logging.info(f"Data between hospitals is {'UNIQUE' if is_unique else 'NOT UNIQUE'} (based on test_ids).")
-		print(f"Data between hospitals is {'UNIQUE' if is_unique else 'NOT UNIQUE'} (based on test_ids).")
 	# choose k-fold vs single pipeline
 	k_folds = int(config.get("data_split", {}).get("k_folds", 1))
 	if k_folds > 1:

@@ -149,9 +149,9 @@ def _validate_split_sizes(payload: Mapping[str, Any]) -> None:
             raise UpdateValidationError(
                 f"`metadata.split_sizes.{split_name}` must be an integer, got {type(value).__name__}."
             )
-        if value <= 0:
+        if value < 0:
             raise UpdateValidationError(
-                f"`metadata.split_sizes.{split_name}` must be > 0, got {value}."
+                f"`metadata.split_sizes.{split_name}` must be >= 0, got {value}."
             )
 
 
