@@ -38,6 +38,24 @@ class ThinkingPattern(ABC):
 		probs = self.predict_proba(x)
 		return np.full_like(probs, 0.05, dtype=np.float32)
 
+	def predict_structured(self, x: np.ndarray, n_samples: int = 25) -> list[dict[str, Any]]:
+		"""Return per-sample structured outputs for probability, uncertainty and reasoning."""
+		x = np.asarray(x)
+		if x.ndim == 1:
+			x = x.reshape(1, -1)
+
+		probs = self.predict_proba(x)
+		uncertainties = self.predict_uncertainty(x, n_samples=n_samples)
+		return [
+			{
+				"probability": float(probs[idx]),
+				"uncertainty": float(uncertainties[idx]),
+				"clinical_reasoning": "",
+				"details": "structured fallback from predict_proba/predict_uncertainty",
+			}
+			for idx in range(x.shape[0])
+		]
+
 
 class LLMReasoner:
 	"""Lightweight LLM reasoner adapter for clinical rationale generation."""
@@ -310,9 +328,9 @@ class LLMReasoner:
 			"You are a clinical reasoning assistant for skin cancer diagnosis. "
 			"Respond with a single valid JSON object only. "
 			"The JSON object must contain exactly these keys: "
-			"`probability` (a number between 0 and 1) and `reasoning` (a short string). "
+			"`probability` (a number between 0 and 1), `uncertainty` (a number between 0 and 1), and `reasoning` (a short string). "
 			"Do not include any extra text, markdown, or explanation outside the JSON object. "
-			"Example: {\"probability\": 0.23, \"reasoning\": \"Short clinical conclusion.\"}"
+			"Example: {\"probability\": 0.23, \"uncertainty\": 0.12, \"reasoning\": \"Short clinical conclusion.\"}"
 		)
 
 	def _extract_json(self, text: str) -> str | None:
@@ -473,8 +491,45 @@ class SkinCancerAgent(ABC):
 		x: np.ndarray,
 		patient_context: dict[str, Any] | None = None,
 		n_samples: int = 25,
+		use_structured: bool = False,
 	) -> list[dict[str, Any]]:
 		observations: list[dict[str, Any]] = []
+		if x.ndim == 1:
+			x = x.reshape(1, -1)
+
+		if use_structured:
+			pattern_outputs = [pattern.predict_structured(x, n_samples=n_samples) for pattern in self._thinking_patterns]
+			for idx in range(x.shape[0]):
+				pattern_entries: list[dict[str, Any]] = []
+				probabilities: list[float] = []
+				uncertainties: list[float] = []
+				for pattern, outputs in zip(self._thinking_patterns, pattern_outputs):
+					result = outputs[idx]
+					prob = float(result.get("probability", 0.0))
+					unc = float(result.get("uncertainty", 0.0))
+					probabilities.append(prob)
+					uncertainties.append(unc)
+					entry = {
+						"name": pattern.name,
+						"probability": prob,
+						"uncertainty": unc,
+						"details": result.get("details", "model output for a single patient sample"),
+					}
+					if result.get("clinical_reasoning"):
+						entry["clinical_reasoning"] = result.get("clinical_reasoning", "")
+					pattern_entries.append(entry)
+
+				observation = {
+					"patterns": pattern_entries,
+					"patient_context": patient_context or {},
+					"probability": float(np.mean(probabilities)) if probabilities else 0.0,
+					"uncertainty": float(np.clip(np.mean(uncertainties), 0.0, 1.0)) if uncertainties else 0.0,
+				}
+				if len(pattern_entries) == 1 and pattern_entries[0].get("clinical_reasoning"):
+					observation["clinical_reasoning"] = pattern_entries[0]["clinical_reasoning"]
+				observations.append(observation)
+			return observations
+
 		for idx in range(x.shape[0]):
 			pattern_entries: list[dict[str, Any]] = []
 			for pattern in self._thinking_patterns:
@@ -506,25 +561,32 @@ class SkinCancerAgent(ABC):
 		if x.ndim == 1:
 			x = x.reshape(1, -1)
 
-		probs = self.predict_proba(x)
-		uncertainties = self.predict_uncertainty(x, n_samples=n_samples)
-		observations = self._build_observations(x, patient_context=patient_context, n_samples=n_samples)
+		observations = self._build_observations(
+			x,
+			patient_context=patient_context,
+			n_samples=n_samples,
+			use_structured=True,
+		)
 
 		results: list[dict[str, Any]] = []
 		for idx in range(x.shape[0]):
 			obs = observations[idx]
 			if use_tools:
 				obs = self._invoke_tool_for_observation(obs, patient_context)
-			reasoning_response = self._llm_reasoner.generate_reasoning(
-				self.cancer_type,
-				obs,
-				patient_context if isinstance(patient_context, dict) else None,
-			)
+			if obs.get("clinical_reasoning"):
+				reasoning_text = obs["clinical_reasoning"]
+			else:
+				reasoning_response = self._llm_reasoner.generate_reasoning(
+					self.cancer_type,
+					obs,
+					patient_context if isinstance(patient_context, dict) else None,
+				)
+				reasoning_text = reasoning_response.get("text", "")
 			results.append(
 				{
-					"probability": float(probs[idx]),
-					"uncertainty": float(uncertainties[idx]),
-					"clinical_reasoning": reasoning_response.get("text", ""),
+					"probability": float(obs.get("probability", 0.0)),
+					"uncertainty": float(obs.get("uncertainty", 0.0)),
+					"clinical_reasoning": reasoning_text,
 					"observations": obs,
 				}
 			)

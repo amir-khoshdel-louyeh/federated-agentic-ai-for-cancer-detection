@@ -35,30 +35,33 @@ class MelanomaAgent(SkinCancerAgent):
         if x.ndim == 1:
             x = x.reshape(1, -1)
 
-        probs = self.predict_proba(x)
-        uncertainties = self.predict_uncertainty(x, n_samples=n_samples)
-        observations = self._build_observations(x, patient_context=patient_context, n_samples=n_samples)
+        observations = self._build_observations(
+            x,
+            patient_context=patient_context,
+            n_samples=n_samples,
+            use_structured=True,
+        )
 
         results: list[dict[str, Any]] = []
         for idx in range(x.shape[0]):
             obs = observations[idx]
-            high_uncertainty = any(
-                pattern["uncertainty"] >= self.uncertainty_threshold
-                for pattern in obs["patterns"]
-            )
+            high_uncertainty = obs.get("uncertainty", 0.0) >= self.uncertainty_threshold
             if high_uncertainty:
                 obs = self._invoke_tool_for_observation(obs, patient_context)
+                reasoning_response = self._llm_reasoner.generate_reasoning(
+                    self.cancer_type,
+                    obs,
+                    patient_context if isinstance(patient_context, dict) else None,
+                )
+                reasoning_text = reasoning_response.get("text", "")
+            else:
+                reasoning_text = obs.get("clinical_reasoning", "")
 
-            reasoning_response = self._llm_reasoner.generate_reasoning(
-                self.cancer_type,
-                obs,
-                patient_context if isinstance(patient_context, dict) else None,
-            )
             results.append(
                 {
-                    "probability": float(probs[idx]),
-                    "uncertainty": float(uncertainties[idx]),
-                    "clinical_reasoning": reasoning_response.get("text", ""),
+                    "probability": float(obs.get("probability", 0.0)),
+                    "uncertainty": float(obs.get("uncertainty", 0.0)),
+                    "clinical_reasoning": reasoning_text,
                     "observations": obs,
                 }
             )
