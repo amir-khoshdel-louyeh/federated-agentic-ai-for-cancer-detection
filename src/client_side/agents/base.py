@@ -336,10 +336,33 @@ class LLMReasoner:
 	def _extract_json(self, text: str) -> str | None:
 		if not text:
 			return None
-		match = re.search(r"\{.*\}", text, re.DOTALL)
-		if not match:
+
+		start_index = text.find("{")
+		if start_index == -1:
 			return None
-		return match.group(0)
+
+		depth = 0
+		in_string = False
+		escape = False
+		for index in range(start_index, len(text)):
+			char = text[index]
+			if in_string:
+				if escape:
+					escape = False
+				elif char == "\\":
+					escape = True
+				elif char == '"':
+					in_string = False
+			elif char == '"':
+				in_string = True
+			elif char == '{':
+				depth += 1
+			elif char == '}':
+				depth -= 1
+				if depth == 0:
+					return text[start_index : index + 1]
+
+		return None
 
 	def _parse_json_response(self, text: str) -> dict[str, Any] | None:
 		json_text = self._extract_json(text)
@@ -348,8 +371,12 @@ class LLMReasoner:
 			return None
 		try:
 			return json.loads(json_text)
-		except json.JSONDecodeError as exc:
-			logging.warning("Failed to decode JSON from LLM response: %s", exc)
+		except (json.JSONDecodeError, ValueError) as exc:
+			logging.warning(
+				"Failed to decode JSON from LLM response after extracting braces: %s; extracted=%s",
+				repr(exc),
+				json_text,
+			)
 			return None
 
 	def _fallback_reasoning(
