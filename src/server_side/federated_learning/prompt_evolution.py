@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+import logging
+from typing import Any, Iterable, Mapping
+
+from src.client_side.agents import LLMReasoner
+
+DEFAULT_PROMPT_EVOLUTION_CONFIG = {
+    "enabled": True,
+    "top_k_hospitals": 1,
+    "bottom_k_hospitals": 1,
+    "min_hospitals": 2,
+}
+
+
+def _score_hospital_update(local_update: Mapping[str, Any]) -> float:
+    selected_performance = local_update.get("metrics", {}).get("selected_performance", {})
+    if not isinstance(selected_performance, Mapping) or not selected_performance:
+        return 0.0
+
+    scores: list[float] = []
+    for performance in selected_performance.values():
+        validation = performance.get("validation", {})
+        if not isinstance(validation, Mapping):
+            continue
+        auc = float(validation.get("auc", 0.0))
+        f1 = float(validation.get("f1", 0.0))
+        scores.append(0.7 * auc + 0.3 * f1)
+
+    return float(sum(scores) / len(scores)) if scores else 0.0
+
+
+def _extract_reasoning_snippets(local_update: Mapping[str, Any], key: str) -> list[str]:
+    reasoning = local_update.get("reasoning", {})
+    if not isinstance(reasoning, Mapping):
+        return []
+    entries = []
+    candidate = reasoning.get(key, {})
+    if isinstance(candidate, Mapping):
+        for values in candidate.values():
+            if isinstance(values, list):
+                entries.extend(str(item) for item in values if item is not None)
+            elif values is not None:
+                entries.append(str(values))
+    elif isinstance(candidate, list):
+        entries.extend(str(item) for item in candidate if item is not None)
+    return entries
+
+
+def _build_meta_prompt(
+    *,
+    top_hospitals: list[tuple[str, Mapping[str, Any]]],
+    bottom_hospitals: list[tuple[str, Mapping[str, Any]]],
+    current_prompt: str | None,
+    round_index: int,
+) -> dict[str, Any]:
+    prompt_lines: list[str] = []
+    prompt_lines.append(
+        "You are a meta-agent that evolves the system prompt for clinical reasoning AI agents."
+    )
+    prompt_lines.append("Analyze the following hospital reasoning examples and produce a better system prompt.")
+    prompt_lines.append("Return a single JSON object with the keys: system_prompt, summary.")
+    prompt_lines.append("Do not include any extra text outside the JSON object.")
+    if current_prompt:
+        prompt_lines.append("\nCurrent system prompt:")
+        prompt_lines.append(current_prompt)
+
+    if top_hospitals:
+        prompt_lines.append("\nBest-performing hospitals:")
+        for hid, update in top_hospitals:
+            score = _score_hospital_update(update)
+            prompt_lines.append(f"- Hospital {hid}: score={score:.3f}")
+            reasoning = _extract_reasoning_snippets(update, "validation")
+            if reasoning:
+                prompt_lines.append("  validation reasoning samples:")
+                for entry in reasoning[:3]:
+                    prompt_lines.append(f"    * {entry}")
+
+    if bottom_hospitals:
+        prompt_lines.append("\nLower-performing hospitals:")
+        for hid, update in bottom_hospitals:
+            score = _score_hospital_update(update)
+            prompt_lines.append(f"- Hospital {hid}: score={score:.3f}")
+            reasoning = _extract_reasoning_snippets(update, "validation")
+            if reasoning:
+                prompt_lines.append("  validation reasoning samples:")
+                for entry in reasoning[:3]:
+                    prompt_lines.append(f"    * {entry}")
+
+    prompt_lines.append(
+        "\nFocus on the patterns that made the better hospitals more accurate and the pitfalls in the weaker hospitals' reasoning."
+    )
+    prompt_lines.append(
+        "Rewrite the system prompt so that future AI agents produce clearer, more reliable malignancy probabilities, uncertainty estimates, and concise clinical reasoning."
+    )
+    prompt_lines.append(
+        "The returned system prompt should mention the required JSON output format and should help the agent avoid ambiguity and overconfidence."
+    )
+    prompt_lines.append(f"Round index: {round_index}")
+
+    return {
+        "patterns": [
+            {
+                "name": "meta_prompt_evolution",
+                "probability": 1.0,
+                "uncertainty": 0.0,
+                "details": "\n".join(prompt_lines),
+            }
+        ],
+        "clinical_features": {
+            "task": "evolve system prompt for clinical reasoning",
+            "round_index": round_index,
+        },
+    }
+
+
+def _select_best_and_worst_hospitals(
+    local_updates: Mapping[str, Mapping[str, Any]],
+    top_k: int,
+    bottom_k: int,
+) -> tuple[list[tuple[str, Mapping[str, Any]]], list[tuple[str, Mapping[str, Any]]]]:
+    scored = [
+        (hospital_id, local_update, _score_hospital_update(local_update))
+        for hospital_id, local_update in local_updates.items()
+    ]
+    scored.sort(key=lambda item: item[2], reverse=True)
+    best = [(hid, update) for hid, update, _ in scored[:top_k]]
+    worst = [(hid, update) for hid, update, _ in scored[-bottom_k:]]
+    return best, worst
+
+
+def _extract_system_prompt(response: Mapping[str, Any]) -> str | None:
+    if not isinstance(response, Mapping):
+        return None
+    json_payload = response.get("json")
+    if isinstance(json_payload, Mapping):
+        candidate = json_payload.get("system_prompt")
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    text = response.get("text")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    return None
+
+
+def evolve_prompt(
+    *,
+    local_updates: Mapping[str, Mapping[str, Any]],
+    previous_global_state: Mapping[str, Any] | None = None,
+    config: Mapping[str, Any] | None = None,
+    round_index: int = 0,
+) -> Mapping[str, Any] | None:
+    config = config or {}
+    evolution_cfg = dict(DEFAULT_PROMPT_EVOLUTION_CONFIG)
+    evolution_cfg.update(config.get("prompt_evolution", {}) if isinstance(config, Mapping) else {})
+
+    if not evolution_cfg.get("enabled", False):
+        return None
+
+    if len(local_updates) < int(evolution_cfg.get("min_hospitals", 2)):
+        return None
+
+    top_k = max(1, int(evolution_cfg.get("top_k_hospitals", 1)))
+    bottom_k = max(1, int(evolution_cfg.get("bottom_k_hospitals", 1)))
+    best, worst = _select_best_and_worst_hospitals(local_updates, top_k=top_k, bottom_k=bottom_k)
+
+    if not best:
+        return None
+
+    current_prompt = None
+    if previous_global_state is not None:
+        current_prompt = previous_global_state.get("prompt_evolution", {}).get("system_prompt")
+    if not current_prompt and isinstance(config, Mapping):
+        current_prompt = config.get("prompt_evolution", {}).get("initial_system_prompt")
+
+    observation = _build_meta_prompt(
+        top_hospitals=best,
+        bottom_hospitals=worst,
+        current_prompt=current_prompt,
+        round_index=round_index,
+    )
+
+    reasoner = LLMReasoner(
+        provider=str(config.get("meta_agent", {}).get("provider", "local") if isinstance(config, Mapping) else "local"),
+        model_name=str(config.get("meta_agent", {}).get("model_name", "gpt-3.5-turbo") if isinstance(config, Mapping) else "gpt-3.5-turbo"),
+        local_llm_config=(config.get("meta_agent", {}).get("local_llm", {}) if isinstance(config, Mapping) else {}),
+        api_key=(config.get("meta_agent", {}).get("api_key") if isinstance(config, Mapping) else None),
+    )
+
+    response = reasoner.generate_reasoning(
+        "META_AGENT",
+        observation,
+        patient_context={"reasoning_task": "evolve prompt"},
+    )
+
+    system_prompt = _extract_system_prompt(response)
+    if not system_prompt:
+        logging.warning("Prompt evolution meta-agent returned no usable system prompt.")
+        return None
+
+    summary = None
+    if isinstance(response.get("json"), Mapping):
+        summary = response["json"].get("summary")
+    if not isinstance(summary, str):
+        summary = "Derived new system prompt from top-performing and lower-performing hospital reasoning."
+
+    return {
+        "system_prompt": system_prompt,
+        "summary": summary,
+        "top_hospitals": [hid for hid, _ in best],
+        "bottom_hospitals": [hid for hid, _ in worst],
+        "generated_at_utc": response.get("generated_at_utc") if isinstance(response, Mapping) else None,
+    }

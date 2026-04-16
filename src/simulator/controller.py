@@ -58,6 +58,7 @@ def make_hospitals(config, data_pipeline):
     hospitals = {}
     local_llm_config = config.get("meta_agent", {}).get("local_llm", {})
     default_provider = config.get("meta_agent", {}).get("provider", "local")
+    prompt_prefix = config.get("prompt_evolution", {}).get("initial_system_prompt")
     for hid in hospital_ids:
         patterns = {
             ct: create_thinking_pattern(
@@ -65,6 +66,7 @@ def make_hospitals(config, data_pipeline):
                 pattern_config={
                     "provider": default_provider,
                     "local_llm_config": local_llm_config,
+                    **({"prompt_prefix": prompt_prefix} if prompt_prefix else {}),
                 },
             )
             for ct in agent_patterns
@@ -169,7 +171,11 @@ def federated_evaluation_round(config, hospitals, save_history=False, save_model
             "cancer_types": get_cancer_types(config),
         })
 
-    orchestrator = FederatedRoundOrchestrator.from_algorithm(name=aggregation_name, **aggregator_kwargs)
+    orchestrator = FederatedRoundOrchestrator.from_algorithm(
+        name=aggregation_name,
+        prompt_evolution_config=config,
+        **aggregator_kwargs,
+    )
 
     num_epochs = int(config.get("simulation", {}).get("num_epoch", 1))
     num_rounds = int(config.get("simulation", {}).get("num_rounds", 1))

@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-from ..agents import SkinCancerAgent
+from ..agents import AIThinkingPattern, SkinCancerAgent
 
 from .contracts import (
     AdaptivePatternPolicyContract,
@@ -706,8 +706,26 @@ class HospitalNode(HospitalLifecycleContract):
         self.metrics_store["last_global_state"] = dict(global_state)
         self.metrics_store["global_update_applied"] = True
 
+        prompt_update = global_state.get("prompt_evolution")
+        if isinstance(prompt_update, Mapping):
+            self._apply_prompt_update(prompt_update)
+
         # Attempt model weights sync if available
         # No model weights are used in the pure AI-agent workflow.
+
+    def _apply_prompt_update(self, prompt_update: Mapping[str, Any]) -> None:
+        system_prompt = str(prompt_update.get("system_prompt", "")).strip()
+        if not system_prompt:
+            return
+
+        for cancer_type in self.scope.agent_portfolio.cancer_types:
+            agent = self.scope.agent_portfolio.get_agent(cancer_type)
+            for pattern in agent.thinking_patterns:
+                if isinstance(pattern, AIThinkingPattern):
+                    pattern.prompt_prefix = system_prompt
+
+        self.metrics_store["prompt_evolution"] = prompt_update
+        self.metrics_store["prompt_evolution_applied"] = True
 
     # Note: `evaluate()` is already implemented earlier in this class (line ~235).
     # The duplicate implementation was intentionally removed to avoid method override confusion and enforce a single evaluation contract.

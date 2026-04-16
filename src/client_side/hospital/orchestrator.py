@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import logging
 from typing import Any, Callable, Mapping, Protocol
 
 from src.server_side.federated_learning.contracts import (
@@ -11,6 +12,7 @@ from src.server_side.federated_learning.contracts import (
 	OrchestratorRoundOutput,
 )
 from src.server_side.federated_learning.factory import build_aggregator
+from src.server_side.federated_learning.prompt_evolution import evolve_prompt
 from src.server_side.federated_learning.validators import ValidationReport, validate_local_updates
 
 
@@ -32,6 +34,7 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 	required_schema_version: str | None = None
 	current_global_state: dict[str, Any] | None = None
 	round_history: list[OrchestratorRoundOutput] = field(default_factory=list)
+	prompt_evolution_config: dict[str, Any] | None = None
 
 	@classmethod
 	def from_algorithm(
@@ -39,12 +42,14 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		*,
 		name: str,
 		required_schema_version: str | None = None,
+		prompt_evolution_config: dict[str, Any] | None = None,
 		**kwargs: Any,
 	) -> "FederatedRoundOrchestrator":
 		"""Build orchestrator from a supported runtime aggregator name."""
 		return cls(
 			aggregator=build_aggregator(name, **kwargs),
 			required_schema_version=required_schema_version,
+			prompt_evolution_config=prompt_evolution_config,
 		)
 
 	def collect_local_updates(
@@ -85,6 +90,14 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 			previous_global_state=prior_state,
 		)
 
+		prompt_update = self._maybe_evolve_prompt(
+			local_updates=local_updates,
+			previous_global_state=prior_state,
+			round_index=round_index,
+		)
+		if prompt_update is not None:
+			global_state["prompt_evolution"] = prompt_update
+
 		round_output = OrchestratorRoundOutput(
 			round_index=round_index,
 			aggregator_name=self.aggregator.name,
@@ -100,6 +113,27 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		self.current_global_state = global_state
 		self.round_history.append(round_output)
 		return round_output
+
+	def _maybe_evolve_prompt(
+		self,
+		*,
+		local_updates: Mapping[str, LocalHospitalUpdatePayload],
+		previous_global_state: Mapping[str, Any] | None,
+		round_index: int,
+	) -> dict[str, Any] | None:
+		"""Optionally evolve the system prompt after a federated round."""
+		if not self.prompt_evolution_config:
+			return None
+		try:
+			return evolve_prompt(
+				local_updates=local_updates,
+				previous_global_state=previous_global_state,
+				config=self.prompt_evolution_config,
+				round_index=round_index,
+			)
+		except Exception as exc:
+			logging.warning("Prompt evolution failed: %s", exc)
+			return None
 
 # run_round_from_hospitals and run are deprecated in this minimal pipeline and removed for cleanup.
 

@@ -77,6 +77,13 @@ inference:
   uncertainty_threshold: 0.6  # call tools when confidence is below 60%
   decision_threshold: 0.5     # malignancy decision threshold (not used in the code)
 
+prompt_evolution:
+  enabled: true
+  top_k_hospitals: 1
+  bottom_k_hospitals: 1
+  min_hospitals: 2
+  initial_system_prompt: "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement."
+
 # ========================
 # LLM ENGINE (Local Llama)
 # ========================
