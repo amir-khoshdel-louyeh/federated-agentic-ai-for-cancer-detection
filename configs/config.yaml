@@ -1,13 +1,7 @@
-# AI-agent-first configuration for federated hospital cancer detection.
-# This config is designed for the current repository state, which uses
-# `ai_agent` reasoning patterns and local/OpenAI LLM inference.
-
 # ========================
-# DATA SOURCES
+# PROJECT CORE SETTINGS
 # ========================
-
-# Optional explicit cancer types for this run. If omitted, code defaults to
-# [BCC, SCC, MELANOMA, AKIEC]. Add CANCER when using a top-level cancer detector.
+# Focus on detecting the cancer types available in HAM10000
 cancer_types:
   - CANCER
   - BCC
@@ -22,73 +16,55 @@ ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
 out_dir: outputs
 
 # ========================
-# DATA SPLIT, MALIGNANCY MAPPINGS, AUGMENTATION, SAMPLING
+# DATA STRATEGY (Non-IID for Federated Testing)
 # ========================
-
 data_split:
-  holdout_test: 0.1
-  k_folds: 1
+  holdout_test: 0.2    # increase test share for more robust Agent evaluation
+  k_folds: 1           # usually one fold is enough in LLM-based systems
   current_fold: 0
+  stratify: true
+  mode: tabular        # your system is tabular metadata-based
 
+  # map HAM10000 labels to malignant classes
   malignant_ham:
     - mel
     - bcc
     - akiec
     - scc
 
-  stratify: true
-  mode: tabular
+detection:
+  mode: detect_only  # available modes: detect_only, detect_then_type
+                       # - detect_only: only run the general cancer detector
+                       # - detect_then_type: run the cancer detector and also evaluate specific cancer-type agents
 
-  final_test:
-    enabled: false
-    n_samples: 0
-    random_seed: 42
-
-augmentation:
-  enabled: false
-  rotation_prob: 0.0
-  flip_prob: 0.0
-  color_jitter_strength: 0.0
-  hair_removal_strength: 0.0
-  num_augmented_copies: 0
-
-preprocessing:
-  enabled: true
-  mode: tabular  # options: tabular, image
-  target_encoding: binary  # options: binary, dx
-  image:
-    resize: [224, 224]
-    normalize: imagenet  # options: minmax, imagenet
-
+# limit sample count to control LLM cost and runtime
 sampling:
-  total_samples: 40
+  total_samples: 10   # keep initial test volume small
   random_seed: 42
 
 # ========================
-# SYSTEM SETTINGS
+# FEDERATION & NODES
 # ========================
+# simulate three hospitals to test aggregation strength
+hospital_ids: 
+  - HOSPITAL_A
 
-hospital_ids: HOSPITAL1
-num_agents_per_hospital: 4
+federation:
+  aggregation_algorithm: no_operation  # use adaptive algorithm based on metrics
+  num_rounds: 3                   # number of metric exchange rounds between hospitals and server
 
 # ========================
-# AGENT CONFIGURATION
+# AGENT & REASONING CONFIG
 # ========================
-
-detection:
-  mode: detect_then_type  # options: detect_only, detect_then_type
-
 agents:
   types:
+    - cancer_detection_agent
     - akiec_agent
     - bcc_agent
     - melanoma_agent
     - scc_agent
 
   patterns:
-    available:
-      - ai_agent
-
     default_mapping:
       CANCER: ai_agent
       BCC: ai_agent
@@ -96,30 +72,22 @@ agents:
       MELANOMA: ai_agent
       AKIEC: ai_agent
 
-    allow_dynamic_switch: false
+# settings related to Agent reasoning
+inference:
+  uncertainty_threshold: 0.6  # call tools when confidence is below 60%
+  decision_threshold: 0.5     # malignancy decision threshold (not used in the code)
 
 # ========================
-# FEDERATION / EVALUATION SETTINGS
+# LLM ENGINE (Local Llama)
 # ========================
-
-federation:
-  aggregation_algorithm: no_operation
-finalizer:
-  threshold: 0.15
-
-# ========================
-# META-AGENT CONTROL
-# ========================
-
 meta_agent:
-  provider: local  # options: local, openai, auto
-  api_key: null  # optional OpenAI API key; can also be set via OPENAI_API_KEY
-  local_model_path: null  # optional local Transformers model path if not using Ollama
+  provider: local
   local_llm:
     base_url: "http://localhost:11434/v1"
     model_name: "llama3.1:8b"
-    temperature: 0.0
+    temperature: 0.0          # keep medical reasoning deterministic by using zero temperature
 
+  # server scoring strategy for hospitals
   local:
     enable: true
     weighting_strategy: adaptive
@@ -128,70 +96,21 @@ meta_agent:
       use_f1: true
       use_confidence: true
 
-  global:
-    enable: true
-    anomaly_detection: true
-    trust_reweighting: true
-
-# ========================
-# PRIVACY & SECURITY
-# ========================
-
-privacy:
-  differential_privacy:
-    enabled: false
-    epsilon: 10.0
-  secure_aggregation: false
-
 # ========================
 # TRACKING & LOGGING
 # ========================
-
 tracking:
   clear_output_on_start: true
   track_per_agent: true
   track_per_hospital: true
-  track_confidence: true
-  track_stability: true
+  track_confidence: true      # store the Agent confidence level for each prediction
   save_logs: true
   log_dir: outputs/logs
-  log_file_name: simulation.log
 
 # ========================
-# TRAINING / EVALUATION
+# SIMULATION CONTROL
 # ========================
-
-training:
-  rebalance_method: oversample
-  imbalance_ratio_threshold: 1
-  decision_threshold: 0.10
-  decision_thresholds:
-    BCC: 0.08
-    SCC: 0.05
-    MELANOMA: 0.08
-    AKIEC: 0.05
-  threshold_tuning:
-    enabled: false
-    rare_classes:
-      - SCC
-      - AKIEC
-    rare_class_recall_weight: 0.70
-    min_threshold: 0.01
-    max_threshold: 0.35
-
 simulation:
-  simulate_multi: false
-  compare_all: false
+  simulate_multi: true        # enable multi-hospital mode
   num_rounds: 1
-  num_epoch: 1
-  early_stop_metric: auc
-  early_stop_patience: 1
-  batch_size: 16
-
-# ========================
-# OUTPUT SETTINGS
-# ========================
-
-output:
-  history_dir: outputs/history
-
+  batch_size: 1               # in agentic systems, evaluate one sample at a time

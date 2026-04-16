@@ -44,7 +44,14 @@ def configure_logging(config):
 
 def make_hospitals(config, data_pipeline):
     """Instantiate hospitals and their agent portfolios."""
-    hospital_ids = [h.strip() for h in config["hospital_ids"].split(",")]
+    raw_hospital_ids = config.get("hospital_ids", [])
+    if isinstance(raw_hospital_ids, str):
+        hospital_ids = [h.strip() for h in raw_hospital_ids.split(",") if h.strip()]
+    elif isinstance(raw_hospital_ids, (list, tuple)):
+        hospital_ids = [str(h).strip() for h in raw_hospital_ids if str(h).strip()]
+    else:
+        hospital_ids = []
+
     agent_patterns = config["agents"]["patterns"]["default_mapping"]
     enabled_datasets = config.get("enabled_datasets", [])
     num_epoch = int(config.get("simulation", {}).get("num_epoch", 1))
