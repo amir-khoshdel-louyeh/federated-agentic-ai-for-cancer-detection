@@ -192,26 +192,27 @@ class HospitalNode(HospitalLifecycleContract):
                 json.dump(entry, file, ensure_ascii=False)
                 file.write("\n")
 
-    def _invalidate_inference_entry(self, unique_id: str, split: str, cancer_type: str) -> bool:
+    def _mark_inference_entry_failed(self, unique_id: str, split: str, cancer_type: str) -> bool:
         cache_path = self._inference_cache_path()
         if not cache_path.exists() or not unique_id:
             return False
 
         entries: list[dict[str, Any]] = []
-        removed = False
+        updated = False
         for entry in self._load_inference_entries() or []:
             if (
                 entry.get("unique_id") == unique_id
                 and entry.get("split") == split
                 and entry.get("cancer_type") == cancer_type
             ):
-                removed = True
-                continue
+                entry["cache_status"] = "failed"
+                entry["correct"] = False
+                updated = True
             entries.append(entry)
 
-        if removed:
+        if updated:
             self._rewrite_inference_cache(entries)
-        return removed
+        return updated
 
     def _invalidate_wrong_cached_entries(
         self,
@@ -243,7 +244,7 @@ class HospitalNode(HospitalLifecycleContract):
                 unique_id = str(entry.get("unique_id", ""))
                 if not unique_id:
                     continue
-                if self._invalidate_inference_entry(unique_id, split, cancer_type):
+                if self._mark_inference_entry_failed(unique_id, split, cancer_type):
                     self.metrics_store.setdefault("cache_invalidation", []).append(
                         {
                             "unique_id": unique_id,
@@ -354,6 +355,9 @@ class HospitalNode(HospitalLifecycleContract):
                 f"Hospital {self.hospital_id}: inferring {cancer_type} on val={x_val.shape[0]} test={x_test.shape[0]} samples"
             )
             for idx, result in enumerate(val_results):
+                probability = float(result.get("probability", 0.0))
+                label = "malignant" if probability >= 0.5 else "benign"
+                ground_truth = int(y_val[idx]) if idx < len(y_val) else 0
                 entry = {
                     "hospital_id": self.hospital_id,
                     "split": "val",
@@ -361,15 +365,20 @@ class HospitalNode(HospitalLifecycleContract):
                     "pattern": agent.name,
                     "unique_id": self._unique_id_for_row(x_val[idx]),
                     "features": {f"feature_{i+1}": float(v) for i, v in enumerate(x_val[idx])},
-                    "probability": float(result.get("probability", 0.0)),
+                    "probability": probability,
                     "uncertainty": float(result.get("uncertainty", 1.0)),
                     "clinical_reasoning": str(result.get("clinical_reasoning", "")),
-                    "label": "malignant" if float(result.get("probability", 0.0)) >= 0.5 else "benign",
-                    "ground_truth": int(y_val[idx]) if idx < len(y_val) else 0,
+                    "label": label,
+                    "ground_truth": ground_truth,
+                    "correct": probability >= 0.5 and ground_truth == 1 or probability < 0.5 and ground_truth == 0,
+                    "cache_status": "ok",
                 }
                 self._append_inference_entry(entry)
 
             for idx, result in enumerate(test_results):
+                probability = float(result.get("probability", 0.0))
+                label = "malignant" if probability >= 0.5 else "benign"
+                ground_truth = int(y_test[idx]) if idx < len(y_test) else 0
                 entry = {
                     "hospital_id": self.hospital_id,
                     "split": "test",
@@ -377,11 +386,13 @@ class HospitalNode(HospitalLifecycleContract):
                     "pattern": agent.name,
                     "unique_id": self._unique_id_for_row(x_test[idx]),
                     "features": {f"feature_{i+1}": float(v) for i, v in enumerate(x_test[idx])},
-                    "probability": float(result.get("probability", 0.0)),
+                    "probability": probability,
                     "uncertainty": float(result.get("uncertainty", 1.0)),
                     "clinical_reasoning": str(result.get("clinical_reasoning", "")),
-                    "label": "malignant" if float(result.get("probability", 0.0)) >= 0.5 else "benign",
-                    "ground_truth": int(y_test[idx]) if idx < len(y_test) else 0,
+                    "label": label,
+                    "ground_truth": ground_truth,
+                    "correct": probability >= 0.5 and ground_truth == 1 or probability < 0.5 and ground_truth == 0,
+                    "cache_status": "ok",
                 }
                 self._append_inference_entry(entry)
 

@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -96,18 +98,131 @@ class AIThinkingPattern(ThinkingPattern):
 
     def _find_cached_entry(self, unique_id: str) -> dict[str, Any] | None:
         for entry in self._load_local_cache() or ():
-            if entry.get("unique_id") == unique_id:
-                return entry
+            if entry.get("unique_id") != unique_id:
+                continue
+            if entry.get("cache_status") == "failed":
+                continue
+            return entry
         return None
 
-    def _append_cache_entry(self, entry: dict[str, Any]) -> None:
-        if self._find_cached_entry(entry.get("unique_id", "")) is not None:
+    def _rewrite_local_cache(self, entries: list[dict[str, Any]]) -> None:
+        cache_path = self._cache_path()
+        self._ensure_cache_directory()
+        with cache_path.open("w", encoding="utf-8") as file:
+            for entry in entries:
+                json.dump(entry, file, ensure_ascii=False)
+                file.write("\n")
+
+    def _replace_cache_entry(self, entry: dict[str, Any]) -> None:
+        unique_id = entry.get("unique_id", "")
+        if not unique_id:
+            self._append_cache_entry(entry)
             return
+
+        entries: list[dict[str, Any]] = []
+        replaced = False
+        for existing in self._load_local_cache() or []:
+            if existing.get("unique_id") == unique_id:
+                entries.append(entry)
+                replaced = True
+            else:
+                entries.append(existing)
+
+        if not replaced:
+            entries.append(entry)
+        self._rewrite_local_cache(entries)
+
+    def _append_cache_entry(self, entry: dict[str, Any]) -> None:
+        if entry.get("cache_status") is None:
+            entry["cache_status"] = "ok"
+        existing = self._find_cached_entry(entry.get("unique_id", ""))
+        if existing is not None:
+            return
+
+        # If there is a previous failed entry for this sample, overwrite it.
+        failed_entry = None
+        for existing in self._load_local_cache() or []:
+            if existing.get("unique_id") == entry.get("unique_id") and existing.get("cache_status") == "failed":
+                failed_entry = existing
+                break
+        if failed_entry is not None:
+            self._replace_cache_entry(entry)
+            return
+
         self._ensure_cache_directory()
         cache_path = self._cache_path()
         with cache_path.open("a", encoding="utf-8") as file:
             json.dump(entry, file, ensure_ascii=False)
             file.write("\n")
+
+    def _load_experience_entries(self, cancer_type: str | None = None) -> list[dict[str, Any]]:
+        experiences: list[dict[str, Any]] = []
+        for entry in self._load_local_cache() or []:
+            if cancer_type is not None and entry.get("cancer_type") != cancer_type:
+                continue
+            if not isinstance(entry.get("features"), Mapping):
+                continue
+            experiences.append(entry)
+        return experiences
+
+    def _feature_distance(self, features_a: dict[str, Any], features_b: dict[str, Any]) -> float:
+        shared_keys = set(features_a) & set(features_b)
+        if not shared_keys:
+            return float("inf")
+        squared_sum = 0.0
+        for key in shared_keys:
+            try:
+                a = float(features_a.get(key, 0.0))
+                b = float(features_b.get(key, 0.0))
+            except (TypeError, ValueError):
+                a = 0.0
+                b = 0.0
+            squared_sum += (a - b) ** 2
+        return math.sqrt(squared_sum)
+
+    def _find_similar_experiences(
+        self,
+        feature_map: dict[str, float],
+        cancer_type: str,
+        top_k: int = 2,
+        max_distance: float = 1.0,
+    ) -> list[dict[str, Any]]:
+        neighbors: list[tuple[float, dict[str, Any]]] = []
+        for entry in self._load_experience_entries(cancer_type=cancer_type):
+            distance = self._feature_distance(feature_map, entry.get("features", {}))
+            if distance <= max_distance:
+                neighbors.append((distance, entry))
+
+        neighbors.sort(key=lambda item: item[0])
+        return [entry for _, entry in neighbors[:top_k]]
+
+    def _build_experience_context(self, feature_map: dict[str, float], cancer_type: str) -> str:
+        neighbors = self._find_similar_experiences(feature_map, cancer_type=cancer_type, top_k=2, max_distance=1.0)
+        if not neighbors:
+            return ""
+
+        lines: list[str] = [
+            "Similar past cases found:",
+        ]
+        failed_warning = False
+        for entry in neighbors:
+            outcome = "correct" if entry.get("correct") else "misclassified"
+            prediction = str(entry.get("label", "unknown"))
+            ground_truth = entry.get("ground_truth", "unknown")
+            reasoning = str(entry.get("clinical_reasoning", "")).replace("\n", " ")
+            lines.append(
+                f"- Known case: predicted {prediction}, ground_truth={ground_truth}, outcome={outcome}. Reasoning: {reasoning}"
+            )
+            if not entry.get("correct"):
+                failed_warning = True
+
+        if failed_warning:
+            lines.insert(
+                1,
+                "Warning: similar past cases were previously misclassified. Pay extra attention to avoid repeating the same mistake.",
+            )
+
+        return "\n".join(lines)
 
     def _make_unique_id(self, feature_map: dict[str, float]) -> str:
         canonical = json.dumps(feature_map, sort_keys=True, separators=(",", ":"))
@@ -136,10 +251,11 @@ class AIThinkingPattern(ThinkingPattern):
                 continue
             logging.info(f"AIThinkingPattern cache miss for {self.name} unique_id={unique_id}; calling LLM")
 
+            experience_context = self._build_experience_context(feature_map, self.name)
             response = self.llm_reasoner.generate_reasoning(
                 "AI_AGENT",
                 {
-                    "patterns": [{"name": self.name, "details": self._build_prompt(row)}],
+                    "patterns": [{"name": self.name, "details": self._build_prompt(row, experience_context)}],
                     "clinical_features": feature_map,
                 },
             )
@@ -206,17 +322,22 @@ class AIThinkingPattern(ThinkingPattern):
             "details": "parsed structured output fallback",
         }
 
-    def _build_prompt(self, row: np.ndarray) -> str:
+    def _build_prompt(self, row: np.ndarray, experience_context: str | None = None) -> str:
         feature_lines = []
         for index, value in enumerate(row, start=1):
             feature_lines.append(f"feature_{index}: {float(value):.4f}")
 
-        return (
+        prompt = (
             f"{self.prompt_prefix}\n"
             "Use the following normalized clinical features for a lesion.\n"
             + "\n".join(feature_lines)
-            + "\nProvide a numeric probability between 0 and 1, a numeric uncertainty between 0 and 1, and a short explanation."
         )
+
+        if experience_context:
+            prompt += "\n\n" + experience_context
+
+        prompt += "\nProvide a numeric probability between 0 and 1, a numeric uncertainty between 0 and 1, and a short explanation."
+        return prompt
 
     def _extract_probability(self, response: dict[str, Any]) -> float:
         json_data = response.get("json")
