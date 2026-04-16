@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 from .base import SkinCancerAgent, ThinkingPattern
 from .tools import SearchTool, VisualAnalysisTool, Tool
 

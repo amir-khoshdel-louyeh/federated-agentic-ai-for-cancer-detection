@@ -28,3 +28,4 @@ outputs/
 proposal.txt
 workflow.txt
 description.md
+tests/
