@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import re
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -19,6 +23,9 @@ class AIThinkingPattern(ThinkingPattern):
         local_llm_config: dict[str, Any] | None = None,
         api_key: str | None = None,
         prompt_prefix: str | None = None,
+        hospital_id: str | None = None,
+        cache_base_dir: str | None = None,
+        cache_file_name: str = "inference_cache.json",
     ) -> None:
         self.llm_reasoner = llm_reasoner or LLMReasoner(
             provider=provider,
@@ -30,6 +37,9 @@ class AIThinkingPattern(ThinkingPattern):
             prompt_prefix
             or "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement."
         )
+        self.hospital_id = hospital_id
+        self.cache_base_dir = cache_base_dir or "outputs"
+        self.cache_file_name = cache_file_name
         self._last_structured_input: np.ndarray | None = None
         self._last_structured_outputs: list[dict[str, Any]] | None = None
 
@@ -58,6 +68,51 @@ class AIThinkingPattern(ThinkingPattern):
         structured = self.predict_structured(x, n_samples=n_samples)
         return np.array([float(item.get("uncertainty", 0.2)) for item in structured], dtype=np.float32)
 
+    def _cache_dir(self) -> Path:
+        base = Path(self.cache_base_dir or "outputs")
+        if self.hospital_id is None:
+            return base / "hospitals" / "unknown"
+        return base / "hospitals" / str(self.hospital_id)
+
+    def _cache_path(self) -> Path:
+        return self._cache_dir() / self.cache_file_name
+
+    def _ensure_cache_directory(self) -> None:
+        self._cache_dir().mkdir(parents=True, exist_ok=True)
+
+    def _load_local_cache(self):
+        cache_path = self._cache_path()
+        if not cache_path.exists():
+            return
+        with cache_path.open("r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+    def _find_cached_entry(self, unique_id: str) -> dict[str, Any] | None:
+        for entry in self._load_local_cache() or ():
+            if entry.get("unique_id") == unique_id:
+                return entry
+        return None
+
+    def _append_cache_entry(self, entry: dict[str, Any]) -> None:
+        if self._find_cached_entry(entry.get("unique_id", "")) is not None:
+            return
+        self._ensure_cache_directory()
+        cache_path = self._cache_path()
+        with cache_path.open("a", encoding="utf-8") as file:
+            json.dump(entry, file, ensure_ascii=False)
+            file.write("\n")
+
+    def _make_unique_id(self, feature_map: dict[str, float]) -> str:
+        canonical = json.dumps(feature_map, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
     def predict_structured(self, x: np.ndarray, n_samples: int = 25) -> list[dict[str, Any]]:
         x = np.asarray(x)
         if x.ndim == 1:
@@ -73,6 +128,14 @@ class AIThinkingPattern(ThinkingPattern):
                 f"feature_{index}": float(value)
                 for index, value in enumerate(row, start=1)
             }
+            unique_id = self._make_unique_id(feature_map)
+            cached_entry = self._find_cached_entry(unique_id)
+            if cached_entry is not None:
+                logging.info(f"AIThinkingPattern cache hit for {self.name} unique_id={unique_id}")
+                structured_results.append(cached_entry)
+                continue
+            logging.info(f"AIThinkingPattern cache miss for {self.name} unique_id={unique_id}; calling LLM")
+
             response = self.llm_reasoner.generate_reasoning(
                 "AI_AGENT",
                 {
@@ -80,7 +143,13 @@ class AIThinkingPattern(ThinkingPattern):
                     "clinical_features": feature_map,
                 },
             )
-            structured_results.append(self._extract_structured_output(response))
+            output = self._extract_structured_output(response)
+            output["unique_id"] = unique_id
+            output["features"] = feature_map
+            output["label"] = "malignant" if output["probability"] >= 0.5 else "benign"
+            output["cancer_type"] = self.name
+            self._append_cache_entry(output)
+            structured_results.append(output)
 
         self._cache_structured_outputs(x, structured_results)
         return structured_results
@@ -128,10 +197,12 @@ class AIThinkingPattern(ThinkingPattern):
                     uncertainty = 0.2
             reasoning = text
 
+        label = "malignant" if probability >= 0.5 else "benign"
         return {
             "probability": probability,
             "uncertainty": uncertainty,
             "clinical_reasoning": reasoning.strip(),
+            "label": label,
             "details": "parsed structured output fallback",
         }
 

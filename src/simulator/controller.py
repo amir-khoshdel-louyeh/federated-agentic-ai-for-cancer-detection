@@ -34,7 +34,7 @@ def configure_logging(config):
     root_logger.addHandler(file_handler)
 
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.WARNING)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
@@ -340,21 +340,25 @@ def validation_system(hospitals, output_dir=None, early_stop_threshold=None, sav
             raise RuntimeError(f"Hospital {hid} must have an agent portfolio before validation_system().")
 
         hospital_validation = {}
-        for cancer_type in hospital.scope.agent_portfolio.cancer_types:
-            agent = hospital.scope.agent_portfolio.get_agent(cancer_type)
-            x_val, y_val = hospital.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
-            if x_val is None or len(x_val) == 0:
+        selected_patterns = hospital.metrics_store.get("selected_patterns", hospital.scope.agent_portfolio.selected_patterns())
+        detection_mode = hospital._detection_mode()
+
+        for cancer_type, pattern_name in selected_patterns.items():
+            if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
+                continue
+
+            raw_val_entries = hospital._load_cached_predictions("val", cancer_type)
+            if not raw_val_entries:
                 hospital_validation[cancer_type] = {
-                    "agent": agent.name,
+                    "agent": pattern_name,
                     "metrics": {},
                     "warning": "No validation samples for this cancer type.",
                 }
                 continue
 
-            val_probs = agent.predict_proba(x_val)
-            metrics = hospital._compute_binary_metrics(y_val, val_probs)
+            metrics = hospital._metrics_from_cached_entries(raw_val_entries, cancer_type)
             hospital_validation[cancer_type] = {
-                "agent": agent.name,
+                "agent": pattern_name,
                 "metrics": metrics,
             }
 

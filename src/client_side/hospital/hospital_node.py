@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
 import logging
 from typing import Any, Literal, Mapping
 
@@ -91,6 +93,7 @@ class HospitalNode(HospitalLifecycleContract):
 
     def initialize(self) -> None:
         """Load local dataset and set initial policy metadata."""
+        logging.info(f"Initializing hospital {self.hospital_id}...")
         self.local_data = self.data_pipeline.load(
             ham_metadata_csv=self.ham_metadata_csv,
             isic_labels_csv=self.isic_labels_csv,
@@ -115,6 +118,9 @@ class HospitalNode(HospitalLifecycleContract):
                 pattern_config.setdefault("local_llm_config", default_local_llm)
                 if default_api_key is not None:
                     pattern_config.setdefault("api_key", default_api_key)
+                pattern_config.setdefault("hospital_id", self.hospital_id)
+                pattern_config.setdefault("cache_base_dir", self.config.get("out_dir", "outputs"))
+                pattern_config.setdefault("cache_file_name", "inference_cache.json")
                 pattern = create_thinking_pattern(pattern_name, pattern_config=pattern_config)
                 self.scope.agent_portfolio.set_pattern(cancer_type, pattern)
 
@@ -129,6 +135,10 @@ class HospitalNode(HospitalLifecycleContract):
             "test": int(self.scope.data.x_test.shape[0]),
         }
         self.metrics_store["lifecycle_state"] = "initialized"
+        logging.info(
+            f"Hospital {self.hospital_id} initialized with splits train={self.metrics_store['split_sizes']['train']} "
+            f"val={self.metrics_store['split_sizes']['val']} test={self.metrics_store['split_sizes']['test']}"
+        )
 
     def _decision_threshold_for(self, cancer_type: str) -> float:
         key = str(cancer_type).strip().upper()
@@ -141,50 +151,75 @@ class HospitalNode(HospitalLifecycleContract):
             return "detect_then_type"
         return str(self.config.get("detection", {}).get("mode", "detect_then_type")).strip()
 
-    def _threshold_tuning_enabled(self) -> bool:
-        if not self.config:
-            return False
-        return bool((self.config.get("training", {}) or {}).get("threshold_tuning", {}).get("enabled", False))
+    def _inference_cache_dir(self) -> Path:
+        return Path(self.config.get("out_dir", "outputs")) / "hospitals" / self.hospital_id
 
-    def _tune_decision_thresholds(
-        self,
-        val_labels: dict[str, np.ndarray],
-        val_predictions: dict[str, np.ndarray],
-    ) -> dict[str, float]:
-        """Tune per-cancer thresholds using validation predictions and preserve AI-agent evaluation behavior."""
-        tuned: dict[str, float] = {}
-        tuning_cfg = (self.config.get("training", {}) or {}).get("threshold_tuning", {}) or {}
-        rare_classes = {
-            str(ct).strip().upper()
-            for ct in tuning_cfg.get("rare_classes", ["SCC", "AKIEC"])
-            if str(ct).strip()
-        }
-        recall_weight = float(tuning_cfg.get("rare_class_recall_weight", 0.25))
-        min_threshold = float(tuning_cfg.get("min_threshold", 0.02))
-        max_threshold = float(tuning_cfg.get("max_threshold", 0.45))
+    def _inference_cache_path(self) -> Path:
+        return self._inference_cache_dir() / "inference_cache.json"
 
-        for cancer_type, y_val in val_labels.items():
-            key = str(cancer_type).strip().upper()
-            probs = val_predictions.get(cancer_type)
-            if probs is None or len(probs) == 0 or np.unique(y_val).size < 2:
-                tuned[key] = self._decision_threshold_for(key)
+    def _ensure_inference_cache_dir(self) -> None:
+        self._inference_cache_dir().mkdir(parents=True, exist_ok=True)
+
+    def _load_inference_entries(self):
+        cache_path = self._inference_cache_path()
+        if not cache_path.exists():
+            return
+        with cache_path.open("r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+    def _append_inference_entry(self, entry: dict[str, Any]) -> None:
+        self._ensure_inference_cache_dir()
+        existing = self._find_inference_entry(entry.get("unique_id", ""), entry.get("split"), entry.get("cancer_type"))
+        if existing is not None:
+            return
+        cache_path = self._inference_cache_path()
+        with cache_path.open("a", encoding="utf-8") as file:
+            json.dump(entry, file, ensure_ascii=False)
+            file.write("\n")
+
+    def _find_inference_entry(self, unique_id: str, split: str | None = None, cancer_type: str | None = None) -> dict[str, Any] | None:
+        for entry in self._load_inference_entries() or ():
+            if entry.get("unique_id") != unique_id:
                 continue
+            if split is not None and entry.get("split") != split:
+                continue
+            if cancer_type is not None and entry.get("cancer_type") != cancer_type:
+                continue
+            return entry
+        return None
 
-            precision, recall, thresholds = precision_recall_curve(y_val, probs, pos_label=1)
-            thresholds = np.concatenate([thresholds, [1.0]])
-            f1_scores = 2 * (precision * recall) / np.maximum(precision + recall, 1e-8)
+    def _load_cached_predictions(self, split: str, cancer_type: str) -> list[dict[str, Any]]:
+        return [
+            entry
+            for entry in self._load_inference_entries() or []
+            if entry.get("split") == split and entry.get("cancer_type") == cancer_type
+        ]
 
-            if key in rare_classes:
-                objective = recall + recall_weight * precision
-            else:
-                objective = f1_scores
+    def _unique_id_for_row(self, row: np.ndarray) -> str:
+        canonical = json.dumps([float(x) for x in row.tolist()], separators=(",", ":"), sort_keys=False)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-            best_index = int(np.nanargmax(objective))
-            best_threshold = float(thresholds[best_index])
-            best_threshold = max(min_threshold, min(best_threshold, max_threshold))
-            tuned[key] = best_threshold
+    def _metrics_from_cached_entries(self, entries: list[dict[str, Any]], cancer_type: str) -> dict[str, Any]:
+        if not entries:
+            return {}
+        probabilities = np.array([float(entry.get("probability", 0.0)) for entry in entries], dtype=np.float32)
+        labels = np.array([int(entry.get("ground_truth", 0)) for entry in entries], dtype=np.int64)
+        return self._compute_binary_metrics(labels, probabilities, threshold=self._decision_threshold_for(cancer_type))
 
-        return tuned
+    def _mean_uncertainty_from_entries(self, entries: list[dict[str, Any]]) -> float:
+        if not entries:
+            return 1.0
+        return float(np.mean([float(entry.get("uncertainty", 1.0)) for entry in entries]))
+
+    def _load_cached_reasons(self, entries: list[dict[str, Any]]) -> list[str]:
+        return [str(entry.get("clinical_reasoning", "")) for entry in entries]
 
     def get_cancer_filtered_split(
         self,
@@ -197,29 +232,25 @@ class HospitalNode(HospitalLifecycleContract):
             raise RuntimeError("Call initialize() before requesting cancer-filtered splits.")
         return self.local_data.filter_for_cancer(cancer_type=cancer_type, split=split, positive_only=positive_only)
 
-    def train(self) -> None:
-        """Train all fixed cancer agents owned by this hospital node."""
+    def infer_and_cache(self) -> None:
+        """Run a single round of inference on validation and test splits and persist results."""
         if self.scope.data is None:
-            raise RuntimeError("Call initialize() before train().")
+            raise RuntimeError("Call initialize() before infer_and_cache().")
         if self.scope.agent_portfolio is None:
-            raise RuntimeError("HospitalNode requires an agent portfolio before train().")
+            raise RuntimeError("HospitalNode requires an agent portfolio before infer_and_cache().")
         if self.local_data is None:
-            raise RuntimeError("Call initialize() before train().")
+            raise RuntimeError("Call initialize() before infer_and_cache().")
 
-        val_labels: dict[str, np.ndarray] = {}
         val_predictions: dict[str, np.ndarray] = {}
-        test_labels: dict[str, np.ndarray] = {}
         test_predictions: dict[str, np.ndarray] = {}
-        training_warnings: dict[str, str] = {}
         per_agent_metrics: dict[str, dict] = {}
 
-        max_local_samples = int(self.config.get("training", {}).get("max_local_samples", 0)) if self.config else 0
-        random_state = int(getattr(self.dataset_handler, "random_state", 42))
-
         detection_mode = self._detection_mode()
+        logging.info(f"Hospital {self.hospital_id}: starting inference for detection mode={detection_mode}")
         for cancer_type in self.scope.agent_portfolio.cancer_types:
             if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
                 continue
+
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             if not isinstance(agent, SkinCancerAgent):
                 raise TypeError(f"Portfolio agent for {cancer_type} must be a SkinCancerAgent.")
@@ -228,44 +259,69 @@ class HospitalNode(HospitalLifecycleContract):
             x_val, y_val = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
             x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
 
-            # For AI-agent workflows, training data is retained only for interface compatibility.
-            # The actual reasoning step happens in AIThinkingPattern.predict_proba().
+            # No model training is required for AI-agent workflows.
             agent.fit(x_train, y_train)
-            val_probs = agent.predict_proba(x_val)
-            test_probs = agent.predict_proba(x_test)
-            self._validate_prediction_shape(agent.name, val_probs, expected_size=x_val.shape[0])
-            self._validate_prediction_shape(agent.name, test_probs, expected_size=x_test.shape[0])
 
-            val_labels[cancer_type] = y_val
-            val_predictions[cancer_type] = val_probs
-            test_labels[cancer_type] = y_test
-            test_predictions[cancer_type] = test_probs
+            val_results = agent.predict_diagnoses(x_val)
+            test_results = agent.predict_diagnoses(x_test)
 
-        if self._threshold_tuning_enabled():
-            tuned = self._tune_decision_thresholds(val_labels, val_predictions)
-            self.decision_thresholds.update(tuned)
-            self.metrics_store["tuned_thresholds"] = tuned
+            self._validate_prediction_shape(
+                agent.name,
+                np.array([result["probability"] for result in val_results], dtype=np.float32),
+                expected_size=x_val.shape[0],
+            )
+            self._validate_prediction_shape(
+                agent.name,
+                np.array([result["probability"] for result in test_results], dtype=np.float32),
+                expected_size=x_test.shape[0],
+            )
 
-        # Convert all predictions to lists for JSON serialization
-        self.metrics_store["predictions"] = {
-            "val": {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in val_predictions.items()},
-            "test": {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in test_predictions.items()},
-        }
-        if training_warnings:
-            self.metrics_store["training_warnings"] = training_warnings
+            logging.info(
+                f"Hospital {self.hospital_id}: inferring {cancer_type} on val={x_val.shape[0]} test={x_test.shape[0]} samples"
+            )
+            for idx, result in enumerate(val_results):
+                entry = {
+                    "hospital_id": self.hospital_id,
+                    "split": "val",
+                    "cancer_type": cancer_type,
+                    "pattern": agent.name,
+                    "unique_id": self._unique_id_for_row(x_val[idx]),
+                    "features": {f"feature_{i+1}": float(v) for i, v in enumerate(x_val[idx])},
+                    "probability": float(result.get("probability", 0.0)),
+                    "uncertainty": float(result.get("uncertainty", 1.0)),
+                    "clinical_reasoning": str(result.get("clinical_reasoning", "")),
+                    "label": "malignant" if float(result.get("probability", 0.0)) >= 0.5 else "benign",
+                    "ground_truth": int(y_val[idx]) if idx < len(y_val) else 0,
+                }
+                self._append_inference_entry(entry)
 
-        # Compute final per-agent metrics for test split using tuned thresholds.
-        for cancer_type in self.scope.agent_portfolio.cancer_types:
-            test_probs = test_predictions.get(cancer_type, np.array([], dtype=np.float32))
-            y_test = test_labels.get(cancer_type, np.array([], dtype=np.int64))
-            if len(y_test) > 0:
-                metrics = self._compute_binary_metrics(
+            for idx, result in enumerate(test_results):
+                entry = {
+                    "hospital_id": self.hospital_id,
+                    "split": "test",
+                    "cancer_type": cancer_type,
+                    "pattern": agent.name,
+                    "unique_id": self._unique_id_for_row(x_test[idx]),
+                    "features": {f"feature_{i+1}": float(v) for i, v in enumerate(x_test[idx])},
+                    "probability": float(result.get("probability", 0.0)),
+                    "uncertainty": float(result.get("uncertainty", 1.0)),
+                    "clinical_reasoning": str(result.get("clinical_reasoning", "")),
+                    "label": "malignant" if float(result.get("probability", 0.0)) >= 0.5 else "benign",
+                    "ground_truth": int(y_test[idx]) if idx < len(y_test) else 0,
+                }
+                self._append_inference_entry(entry)
+
+            val_predictions[cancer_type] = np.array([float(result.get("probability", 0.0)) for result in val_results], dtype=np.float32)
+            test_predictions[cancer_type] = np.array([float(result.get("probability", 0.0)) for result in test_results], dtype=np.float32)
+
+            if x_test.shape[0] > 0:
+                per_agent_metrics[agent.name] = self._compute_binary_metrics(
                     y_test,
-                    test_probs,
+                    test_predictions[cancer_type],
                     threshold=self._decision_threshold_for(cancer_type),
                 )
             else:
-                metrics = {
+                per_agent_metrics[agent.name] = {
                     "accuracy": 0.0,
                     "f1": 0.0,
                     "auc": 0.5,
@@ -276,19 +332,24 @@ class HospitalNode(HospitalLifecycleContract):
                     "sensitivity": 0.0,
                     "specificity": 0.0,
                 }
-            per_agent_metrics[self.scope.agent_portfolio.get_agent(cancer_type).name] = metrics
 
-        # Store per-agent metrics for federation
+        self.metrics_store["predictions"] = {
+            "val": {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in val_predictions.items()},
+            "test": {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in test_predictions.items()},
+        }
         self.metrics_store.setdefault("evaluation", {})["test"] = per_agent_metrics
-        logging.debug(f"[DEBUG] Hospital {self.hospital_id} per_agent_metrics: {per_agent_metrics}")
-        self.metrics_store["lifecycle_state"] = "trained"
+        self.metrics_store["lifecycle_state"] = "inferred"
+        logging.info(
+            f"Hospital {self.hospital_id}: inference completed. "
+            f"Cached {sum([len(self._load_cached_predictions('val', ct)) + len(self._load_cached_predictions('test', ct)) for ct in self.scope.agent_portfolio.cancer_types if self._detection_mode() != 'detect_only' or ct.upper() == 'CANCER'])} samples."
+        )
+
+    def train(self) -> None:
+        """Legacy alias for AI-agent inference and cache generation."""
+        return self.infer_and_cache()
 
     def evaluate(self) -> dict[str, Any]:
-        """Evaluate all fixed cancer agents and store metrics for validation and test splits.
-
-        This evaluation pipeline is preserved for the AI-agent workflow and uses tuned
-        decision thresholds when threshold tuning is enabled.
-        """
+        """Evaluate all fixed cancer agents and store metrics from cached JSON predictions."""
         if self.scope.data is None:
             raise RuntimeError("Call initialize() before evaluate().")
         if self.scope.agent_portfolio is None:
@@ -296,13 +357,12 @@ class HospitalNode(HospitalLifecycleContract):
         if self.local_data is None:
             raise RuntimeError("Call initialize() before evaluate().")
 
+        logging.info(f"Hospital {self.hospital_id}: starting evaluation from cached predictions.")
         val_metrics = {}
         test_metrics = {}
         selected_patterns = self.metrics_store.get("selected_patterns", self.scope.agent_portfolio.selected_patterns())
         selected_performance = {}
 
-        test_probabilities: dict[str, np.ndarray] = {}
-        test_uncertainties: dict[str, np.ndarray] = {}
         val_reasoning: dict[str, list[str]] = {}
         test_reasoning: dict[str, list[str]] = {}
 
@@ -310,49 +370,45 @@ class HospitalNode(HospitalLifecycleContract):
         for cancer_type, pattern_name in selected_patterns.items():
             if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
                 continue
-            agent = self.scope.agent_portfolio.get_agent(cancer_type)
-            x_val, y_val = self.get_cancer_filtered_split(cancer_type=cancer_type, split="val")
-            x_test, y_test = self.get_cancer_filtered_split(cancer_type=cancer_type, split="test")
-            val_results = agent.predict_diagnoses(x_val)
-            test_results = agent.predict_diagnoses(x_test)
-
-            val_probs = np.array([result["probability"] for result in val_results], dtype=np.float32)
-            test_probs = np.array([result["probability"] for result in test_results], dtype=np.float32)
 
             prediction_key = f"{cancer_type.lower()}::{pattern_name}"
-            val_metrics[prediction_key] = self._compute_binary_metrics(
-                y_val,
-                val_probs,
-                threshold=self._decision_threshold_for(cancer_type),
-            )
-            test_metrics[prediction_key] = self._compute_binary_metrics(
-                y_test,
-                test_probs,
-                threshold=self._decision_threshold_for(cancer_type),
-            )
-            val_reasoning[prediction_key] = [result.get("clinical_reasoning", "") for result in val_results]
-            test_reasoning[prediction_key] = [result.get("clinical_reasoning", "") for result in test_results]
+            raw_val_entries = self._load_cached_predictions("val", cancer_type)
+            raw_test_entries = self._load_cached_predictions("test", cancer_type)
 
-            test_probabilities[cancer_type] = test_probs
-            if x_test.shape[0] > 0:
-                test_uncertainties[cancer_type] = agent.predict_uncertainty(x_test)
-            else:
-                test_uncertainties[cancer_type] = np.full(0, 1.0, dtype=np.float32)
+            val_metrics[prediction_key] = self._metrics_from_cached_entries(raw_val_entries, cancer_type)
+            test_metrics[prediction_key] = self._metrics_from_cached_entries(raw_test_entries, cancer_type)
+            val_reasoning[prediction_key] = self._load_cached_reasons(raw_val_entries)
+            test_reasoning[prediction_key] = self._load_cached_reasons(raw_test_entries)
 
-        detection_mode = self._detection_mode()
-        for cancer_type, pattern_name in selected_patterns.items():
-            if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
-                continue
-            prediction_key = f"{cancer_type.lower()}::{pattern_name}"
             selected_performance[cancer_type] = {
                 "pattern": pattern_name,
-                "validation": val_metrics.get(prediction_key, {}),
-                "test": test_metrics.get(prediction_key, {}),
+                "validation": val_metrics[prediction_key],
+                "test": test_metrics[prediction_key],
+                "mean_validation_uncertainty": self._mean_uncertainty_from_entries(raw_val_entries),
+                "mean_test_uncertainty": self._mean_uncertainty_from_entries(raw_test_entries),
             }
 
         candidate_comparisons = self._build_candidate_comparisons(val_metrics)
 
-        # Hospital manager agent uses specialist performance and patient metadata to select a lead diagnosis agent.
+        for prediction_key, metrics in val_metrics.items():
+            if isinstance(metrics, dict) and "tp" in metrics:
+                logging.info(
+                    f"Hospital {self.hospital_id} [val] {prediction_key} confusion: TN={metrics.get('tn')} "
+                    f"FP={metrics.get('fp')} FN={metrics.get('fn')} TP={metrics.get('tp')}"
+                )
+
+        for prediction_key, metrics in test_metrics.items():
+            if isinstance(metrics, dict) and "tp" in metrics:
+                logging.info(
+                    f"Hospital {self.hospital_id} [test] {prediction_key} confusion: TN={metrics.get('tn')} "
+                    f"FP={metrics.get('fp')} FN={metrics.get('fn')} TP={metrics.get('tp')}"
+                )
+
+        logging.info(
+            f"Hospital {self.hospital_id}: evaluation complete. "
+            f"Validation keys={len(val_metrics)} test keys={len(test_metrics)}"
+        )
+
         manager = HospitalManagerAgent(
             provider=self.config.get("meta_agent", {}).get("provider", "local"),
             model_name=self.config.get("meta_agent", {}).get("model_name", "gpt-3.5-turbo"),
@@ -526,6 +582,10 @@ class HospitalNode(HospitalLifecycleContract):
             "log_loss": logloss_val,
             "sensitivity": sensitivity,
             "specificity": specificity,
+            "tn": int(tn),
+            "fp": int(fp),
+            "fn": int(fn),
+            "tp": int(tp),
         }
 
         # Ensure all metrics are finite

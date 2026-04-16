@@ -7,11 +7,9 @@ from configs.config_loader import load_config
 from src.simulator.controller import (
 	configure_logging,
 	initialize_system,
-	federated_evaluation_round,
 	test_system,
 	show_results,
 	show_log_location,
-	validation_system
 )
 
 
@@ -72,18 +70,11 @@ def main():
 	# Log split sizes for each hospital
 	logging.info("=== Data Split Sizes Per Hospital ===")
 	print("=== Data Split Sizes Per Hospital ===")
-	all_test_ids = {}
 	for hid, hospital in hospitals.items():
 		split_sizes = hospital.metrics_store.get("split_sizes", {})
 		display_split_sizes = {k: v for k, v in split_sizes.items() if k != "train"}
 		logging.info(f"Hospital {hid}: {display_split_sizes}")
 		print(f"Hospital {hid}: {display_split_sizes}")
-		# Try to get test_ids from local_data
-		test_ids = None
-		if hasattr(hospital, "local_data") and hospital.local_data is not None:
-			test_ids = getattr(hospital.local_data, "test_ids", None)
-		if test_ids is not None:
-			all_test_ids[hid] = set(test_ids.tolist() if hasattr(test_ids, 'tolist') else list(test_ids))
 	logging.info("====================================")
 	print("====================================")
 
@@ -99,14 +90,18 @@ def main():
 		logging.info(f"Running k-fold cross-validation: {k_folds} folds")
 		run_k_fold_experiment(config)
 	else:
-		logging.info("Starting federated evaluation round...")
-		print("Starting federated evaluation round...")
-		federated_evaluation_round(config, hospitals)
-		logging.info("Federated evaluation round complete.")
-		print("Federated evaluation round complete.")
-		validation_system(hospitals)
-		logging.info("Running evaluation on test data...")
-		print("Running evaluation on test data...")
+		logging.info("Starting AI-agent workflow: initialize -> infer_and_cache -> evaluate")
+		print("Starting AI-agent workflow: initialize -> infer_and_cache -> evaluate")
+
+		logging.info("Running inference for each hospital...")
+		print("Running inference for each hospital...")
+		for hid, hospital in hospitals.items():
+			hospital.train()
+			logging.info(f"Inference cache generated for hospital {hid}.")
+			print(f"Inference cache generated for hospital {hid}.")
+
+		logging.info("Running evaluation on cached predictions...")
+		print("Running evaluation on cached predictions...")
 		results = test_system(hospitals)
 		show_results(results)
 		show_log_location(config)

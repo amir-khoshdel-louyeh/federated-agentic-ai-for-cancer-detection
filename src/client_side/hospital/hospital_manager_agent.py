@@ -32,28 +32,39 @@ class HospitalManagerAgent:
         agent_performance: dict[str, dict[str, Any]],
         candidate_comparisons: dict[str, list[dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
-        """Recommend a lead agent using historical performance and patient context."""
-        observations = self._build_observations(agent_performance, candidate_comparisons)
-        reasoning_response = self._llm_reasoner.generate_reasoning(
-            "HospitalManager",
-            {"patterns": observations},
-            patient_context=patient_metadata,
+        """Recommend a lead agent using cached metadata only."""
+        best_agent = None
+        best_score = float("-inf")
+        rankings = self._rank_agents(agent_performance)
+
+        for agent_name, performance in agent_performance.items():
+            validation = performance.get("validation", {})
+            test = performance.get("test", {})
+            mean_val_uncertainty = float(performance.get("mean_validation_uncertainty", 1.0))
+            mean_test_uncertainty = float(performance.get("mean_test_uncertainty", 1.0))
+
+            score = (
+                float(validation.get("auc", 0.0)) * 0.6
+                + float(test.get("f1", 0.0)) * 0.3
+                + (1.0 - mean_test_uncertainty) * 0.1
+            )
+            if score > best_score:
+                best_score = score
+                best_agent = agent_name
+
+        if best_agent is None:
+            return self._fallback_recommendation(patient_metadata, agent_performance, "No cached agent metadata available.")
+
+        selected = agent_performance.get(best_agent, {})
+        reasoning_text = (
+            f"Selected lead agent {best_agent} based on cached validation AUC {selected.get('validation', {}).get('auc', 0.0):.3f}, "
+            f"test F1 {selected.get('test', {}).get('f1', 0.0):.3f}, and mean test uncertainty {selected.get('mean_test_uncertainty', 1.0):.3f}."
         )
-        if isinstance(reasoning_response, dict):
-            reasoning_text = reasoning_response.get("text", "")
-        else:
-            reasoning_text = str(reasoning_response)
-
-        lead_agent = self._extract_lead_agent(reasoning_text, agent_performance)
-        if lead_agent is None:
-            return self._fallback_recommendation(patient_metadata, agent_performance, reasoning_text)
-
-        selected = agent_performance.get(lead_agent, {})
         return {
-            "lead_agent": lead_agent,
+            "lead_agent": best_agent,
             "lead_pattern": selected.get("pattern", "unknown"),
             "clinical_reasoning": reasoning_text,
-            "agent_rankings": self._rank_agents(agent_performance),
+            "agent_rankings": rankings,
         }
 
     def _build_observations(

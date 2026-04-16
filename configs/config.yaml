@@ -100,8 +100,8 @@ meta_agent:
 # TRACKING & LOGGING
 # ========================
 tracking:
-  clear_output_on_start: false
-  track_per_agent: false
+  clear_output_on_start: true
+  track_per_agent: True
   track_per_hospital: false
   track_confidence: false      # store the Agent confidence level for each prediction
   save_logs: false
