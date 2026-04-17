@@ -30,7 +30,14 @@ class AIThinkingPattern(ThinkingPattern):
         cache_base_dir: str | None = None,
         cache_file_name: str = "inference_cache.json",
         max_retries: int = 2,
+        calibration_temperature: float = 0.1,
     ) -> None:
+        self.calibration_temperature = float(calibration_temperature)
+        if local_llm_config is None:
+            local_llm_config = {}
+        if "temperature" not in local_llm_config:
+            local_llm_config["temperature"] = self.calibration_temperature
+
         self.llm_reasoner = llm_reasoner or LLMReasoner(
             provider=provider,
             model_name=model_name,
@@ -38,11 +45,17 @@ class AIThinkingPattern(ThinkingPattern):
             api_key=api_key,
             system_prompt=system_prompt,
         )
+        if llm_reasoner is not None:
+            self.llm_reasoner.temperature = self.calibration_temperature
         if llm_reasoner is not None and system_prompt:
             self.llm_reasoner.set_system_prompt(system_prompt)
         self.prompt_prefix = (
             prompt_prefix
-            or "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement."
+            or (
+                "You are a strict pathologist. Your duty is accurate diagnosis, not alarm. "
+                "If evidence is insufficient for malignancy, classify the lesion as benign. "
+                "Bias toward cancer wastes hospital resources. Use a careful, skeptical reasoning style."
+            )
         )
         self.hospital_id = hospital_id
         self.cache_base_dir = cache_base_dir or "outputs"
@@ -315,10 +328,28 @@ class AIThinkingPattern(ThinkingPattern):
     def _extract_structured_output(self, response: dict[str, Any]) -> dict[str, Any]:
         json_data = response.get("json")
         if isinstance(json_data, dict):
+            probability = json_data.get("probability")
+            if probability is None:
+                probability = json_data.get("Probability")
+            probability = float(max(0.0, min(1.0, float(probability)))) if probability is not None else 0.5
+
+            uncertainty = json_data.get("uncertainty")
+            if uncertainty is None:
+                uncertainty = json_data.get("uncertainty")
+            if uncertainty is None:
+                confidence = json_data.get("confidence") or json_data.get("Confidence")
+                try:
+                    confidence = float(confidence)
+                    uncertainty = 1.0 - max(0.0, min(1.0, confidence))
+                except (TypeError, ValueError):
+                    uncertainty = None
+            uncertainty = float(max(0.0, min(1.0, float(uncertainty)))) if uncertainty is not None else 0.2
+
+            reasoning = json_data.get("reasoning") or json_data.get("Reasoning") or json_data.get("analysis") or ""
             return {
-                "probability": float(max(0.0, min(1.0, float(json_data.get("probability", 0.5))))),
-                "uncertainty": float(max(0.0, min(1.0, float(json_data.get("uncertainty", 0.2))))),
-                "clinical_reasoning": str(json_data.get("reasoning", "")),
+                "probability": probability,
+                "uncertainty": uncertainty,
+                "clinical_reasoning": str(reasoning),
                 "details": str(json_data.get("details", "single-shot structured prediction")),
             }
 
@@ -327,18 +358,29 @@ class AIThinkingPattern(ThinkingPattern):
         uncertainty = 0.2
         reasoning = ""
         if text:
-            prob_match = re.search(r"([01](?:\.\d+)?)", text)
+            prob_match = re.search(r"Probability\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
+            if not prob_match:
+                prob_match = re.search(r"([01](?:\.\d+)?)", text)
             if prob_match:
                 try:
                     probability = float(max(0.0, min(1.0, float(prob_match.group(1)))))
                 except ValueError:
                     probability = 0.5
-            unc_match = re.search(r"uncertainty\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
-            if unc_match:
+
+            conf_match = re.search(r"Confidence\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
+            if conf_match:
                 try:
-                    uncertainty = float(max(0.0, min(1.0, float(unc_match.group(1)))))
+                    confidence = float(max(0.0, min(1.0, float(conf_match.group(1)))))
+                    uncertainty = 1.0 - confidence
                 except ValueError:
-                    uncertainty = 0.2
+                    pass
+            else:
+                unc_match = re.search(r"uncertainty\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
+                if unc_match:
+                    try:
+                        uncertainty = float(max(0.0, min(1.0, float(unc_match.group(1)))))
+                    except ValueError:
+                        uncertainty = 0.2
             reasoning = text
 
         label = "malignant" if probability >= 0.5 else "benign"
@@ -353,10 +395,18 @@ class AIThinkingPattern(ThinkingPattern):
     def _build_prompt(self, row: np.ndarray, experience_context: str | None = None) -> str:
         feature_lines = []
         for index, value in enumerate(row, start=1):
-            feature_lines.append(f"feature_{index}: {float(value):.4f}")
+            feature_lines.append(
+                f"feature_{index}: {float(value):.4f} "
+                "(normalized clinical signal; interpret values as scaled risk indicators rather than raw measurements)"
+            )
 
         prompt = (
             f"{self.prompt_prefix}\n"
+            "Review the following normalized clinical features carefully. "
+            "List evidence that supports malignancy and evidence that supports benignity before you decide. "
+            "Then reflect internally: could this lesion be benign, and if you have overestimated malignancy, reduce the probability. "
+            "If you refer to prior cases, keep benign and malignant examples balanced and avoid over-weighting malignant cases. "
+            "If the evidence is weak, prefer benignity.\n"
             "Use the following normalized clinical features for a lesion.\n"
             + "\n".join(feature_lines)
         )
@@ -364,7 +414,10 @@ class AIThinkingPattern(ThinkingPattern):
         if experience_context:
             prompt += "\n\n" + experience_context
 
-        prompt += "\nProvide a numeric probability between 0 and 1, a numeric uncertainty between 0 and 1, and a short explanation."
+        prompt += (
+            "\n\nProvide a short structured reasoning summary with positive and negative evidence, then return a JSON object with keys: probability, uncertainty, reasoning. "
+            "The reasoning text should include a confidence check and a final reflective step."
+        )
         return prompt
 
     def _extract_probability(self, response: dict[str, Any]) -> float:

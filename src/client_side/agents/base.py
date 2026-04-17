@@ -332,12 +332,15 @@ class LLMReasoner:
 		if self._system_prompt_override:
 			return self._system_prompt_override
 		return (
-			"You are a clinical reasoning assistant for skin cancer diagnosis. "
+			"You are a strict clinical pathologist. Your duty is accurate diagnosis, not alarm. "
+			"If evidence is insufficient for malignancy, classify the lesion as benign. "
+			"Bias toward cancer wastes hospital resources. Use a cautious, skeptical style. "
 			"Respond with a single valid JSON object only. "
-			"The JSON object must contain exactly these keys: "
-			"`probability` (a number between 0 and 1), `uncertainty` (a number between 0 and 1), and `reasoning` (a short string). "
-			"Do not include any extra text, markdown, or explanation outside the JSON object. "
-			"Example: {\"probability\": 0.23, \"uncertainty\": 0.12, \"reasoning\": \"Short clinical conclusion.\"}"
+			"The JSON object must contain exactly these keys: `probability` (a number between 0 and 1), "
+			"`uncertainty` (a number between 0 and 1), and `reasoning` (a short string). "
+			"The reasoning field should summarize positive and negative evidence, include a short confidence check, and conclude with an internal reflection step. "
+			"Do not include extra text outside the JSON object. "
+			"Example: {\"probability\": 0.32, \"uncertainty\": 0.28, \"reasoning\": \"Reasoning: mild risk factors, but also strong benign evidence. Confidence: moderate.\"}"
 		)
 
 	def _extract_json(self, text: str) -> str | None:

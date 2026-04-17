@@ -39,7 +39,7 @@ detection:
 
 # limit sample count to control LLM cost and runtime
 sampling:
-  total_samples: 6   # keep initial test volume small
+  total_samples: 10   # keep initial test volume small
   random_seed: 42
 
 # ========================

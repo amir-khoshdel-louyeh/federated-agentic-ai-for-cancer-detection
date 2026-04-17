@@ -66,10 +66,10 @@ class HospitalNode(HospitalLifecycleContract):
                 "decision_threshold",
                 inference_cfg.get(
                     "decision_threshold",
-                    config.get("decision_threshold", 0.5) if config else 0.5,
+                    config.get("decision_threshold", 0.8) if config else 0.8,
                 ),
             )
-        ) if config else 0.5
+        ) if config else 0.8
         self.decision_threshold_penalty_weight = float(
             inference_cfg.get("decision_threshold_penalty_weight", 0.0)
         ) if config else 0.0
@@ -840,7 +840,7 @@ class HospitalNode(HospitalLifecycleContract):
         # No model weights are used in the pure AI-agent workflow.
 
     def _apply_prompt_update(self, prompt_update: Mapping[str, Any]) -> None:
-        prompt_map = prompt_update.get("agents_prompts")
+        prompt_map = prompt_update.get("agents_prompts") or prompt_update.get("agent_prompts")
         system_prompt = prompt_update.get("system_prompt")
         if prompt_map is None and not system_prompt:
             return
@@ -865,6 +865,8 @@ class HospitalNode(HospitalLifecycleContract):
                 agent_prompt = resolve_agent_prompt(cancer_type)
                 if agent_prompt:
                     pattern.prompt_prefix = agent_prompt
+                elif isinstance(system_prompt, str) and system_prompt.strip():
+                    pattern.prompt_prefix = system_prompt.strip()
 
                 if isinstance(system_prompt, str) and system_prompt.strip():
                     pattern.llm_reasoner.set_system_prompt(system_prompt)
