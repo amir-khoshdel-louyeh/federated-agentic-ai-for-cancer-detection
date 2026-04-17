@@ -67,6 +67,7 @@ class LLMReasoner:
 		local_model_path: str | None = None,
 		local_llm_config: dict[str, Any] | None = None,
 		api_key: str | None = None,
+		system_prompt: str | None = None,
 	) -> None:
 		self.provider = provider.strip().lower()
 		self.local_model_path = local_model_path
@@ -78,6 +79,7 @@ class LLMReasoner:
 		self._openai_available = self._check_openai_available()
 		self._local_dependencies_available = self._check_local_dependencies_available()
 		self._warnings_emitted: set[str] = set()
+		self._system_prompt_override = str(system_prompt).strip() if system_prompt else None
 
 		# If local Ollama is configured, treat it as the primary backend.
 		if self.local_llm_base_url and self.provider in {"auto", "openai", "api"}:
@@ -102,6 +104,9 @@ class LLMReasoner:
 		if key not in self._warnings_emitted:
 			logging.warning(message)
 			self._warnings_emitted.add(key)
+
+	def set_system_prompt(self, system_prompt: str | None) -> None:
+		self._system_prompt_override = str(system_prompt).strip() if system_prompt else None
 
 	def _openai_backend_usable(self) -> bool:
 		return self._openai_available and bool(self.api_key or self.local_llm_base_url)
@@ -324,6 +329,8 @@ class LLMReasoner:
 		return prompt
 
 	def _system_prompt(self) -> str:
+		if self._system_prompt_override:
+			return self._system_prompt_override
 		return (
 			"You are a clinical reasoning assistant for skin cancer diagnosis. "
 			"Respond with a single valid JSON object only. "
@@ -600,6 +607,8 @@ class SkinCancerAgent(ABC):
 			obs = observations[idx]
 			if use_tools:
 				obs = self._invoke_tool_for_observation(obs, patient_context)
+			response_json = None
+			reasoning_text = ""
 			if obs.get("clinical_reasoning"):
 				reasoning_text = obs["clinical_reasoning"]
 			else:
@@ -609,13 +618,26 @@ class SkinCancerAgent(ABC):
 					patient_context if isinstance(patient_context, dict) else None,
 				)
 				reasoning_text = reasoning_response.get("text", "")
+				json_payload = reasoning_response.get("json")
+				if isinstance(json_payload, dict):
+					response_json = json_payload
+
+			probability = float(obs.get("probability", 0.0))
+			uncertainty = float(obs.get("uncertainty", 0.0))
+			if response_json is not None:
+				try:
+					probability = float(max(0.0, min(1.0, float(response_json.get("probability", probability)))))
+				except (TypeError, ValueError):
+					probability = probability
+				try:
+					uncertainty = float(max(0.0, min(1.0, float(response_json.get("uncertainty", uncertainty)))))
+				except (TypeError, ValueError):
+					uncertainty = uncertainty
 			results.append(
 				{
-					"probability": float(obs.get("probability", 0.0)),
-					"uncertainty": float(obs.get("uncertainty", 0.0)),
+					"probability": probability,
+					"uncertainty": uncertainty,
 					"clinical_reasoning": reasoning_text,
 					"observations": obs,
 				}
 			)
-
-		return results

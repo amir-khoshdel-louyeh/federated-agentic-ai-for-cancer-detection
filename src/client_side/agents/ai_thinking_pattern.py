@@ -25,6 +25,7 @@ class AIThinkingPattern(ThinkingPattern):
         local_llm_config: dict[str, Any] | None = None,
         api_key: str | None = None,
         prompt_prefix: str | None = None,
+        system_prompt: str | None = None,
         hospital_id: str | None = None,
         cache_base_dir: str | None = None,
         cache_file_name: str = "inference_cache.json",
@@ -35,7 +36,10 @@ class AIThinkingPattern(ThinkingPattern):
             model_name=model_name,
             local_llm_config=local_llm_config,
             api_key=api_key,
+            system_prompt=system_prompt,
         )
+        if llm_reasoner is not None and system_prompt:
+            self.llm_reasoner.set_system_prompt(system_prompt)
         self.prompt_prefix = (
             prompt_prefix
             or "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement."

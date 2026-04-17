@@ -70,6 +70,9 @@ class HospitalNode(HospitalLifecycleContract):
                 ),
             )
         ) if config else 0.5
+        self.decision_threshold_penalty_weight = float(
+            inference_cfg.get("decision_threshold_penalty_weight", 0.0)
+        ) if config else 0.0
         self.decision_thresholds = {}
         if config:
             thresholds = training_cfg.get("decision_thresholds", {})
@@ -293,7 +296,12 @@ class HospitalNode(HospitalLifecycleContract):
             return {}
         probabilities = np.array([float(entry.get("probability", 0.0)) for entry in entries], dtype=np.float32)
         labels = np.array([int(entry.get("ground_truth", 0)) for entry in entries], dtype=np.int64)
-        return self._compute_binary_metrics(labels, probabilities, threshold=self._decision_threshold_for(cancer_type))
+        return self._compute_binary_metrics(
+            labels,
+            probabilities,
+            threshold=self._decision_threshold_for(cancer_type),
+            penalty_weight=self.decision_threshold_penalty_weight,
+        )
 
     def _mean_uncertainty_from_entries(self, entries: list[dict[str, Any]]) -> float:
         if not entries:
@@ -416,6 +424,7 @@ class HospitalNode(HospitalLifecycleContract):
                     y_test,
                     test_predictions[cancer_type],
                     threshold=self._decision_threshold_for(cancer_type),
+                    penalty_weight=self.decision_threshold_penalty_weight,
                 )
             else:
                 per_agent_metrics[agent.name] = {
@@ -581,7 +590,12 @@ class HospitalNode(HospitalLifecycleContract):
             self._validate_prediction_shape(agent.name, test_probs, expected_size=x_external.shape[0])
 
             if x_external.shape[0] > 0:
-                metrics = self._compute_binary_metrics(y_test, test_probs, threshold=self._decision_threshold_for(cancer_type))
+                metrics = self._compute_binary_metrics(
+                    y_test,
+                    test_probs,
+                    threshold=self._decision_threshold_for(cancer_type),
+                    penalty_weight=self.decision_threshold_penalty_weight,
+                )
             else:
                 metrics = {
                     "accuracy": 0.0,
@@ -612,7 +626,7 @@ class HospitalNode(HospitalLifecycleContract):
         }
 
     @staticmethod
-    def _compute_binary_metrics(y_true: np.ndarray, probs, threshold: float = 0.5) -> dict[str, float]:
+    def _compute_binary_metrics(y_true: np.ndarray, probs, threshold: float = 0.5, penalty_weight: float = 0.0) -> dict[str, float]:
         # Handle degenerate class splits before calling sklearn metrics to avoid lots of warnings
         uniques = np.unique(y_true)
         if uniques.size < 2:
@@ -667,6 +681,16 @@ class HospitalNode(HospitalLifecycleContract):
         except ValueError:
             logloss_val = float("inf")
 
+        # Penalize highly skewed predictions even when the threshold yields high accuracy.
+        num_positive_preds = int(preds.sum())
+        num_negative_preds = int(preds.shape[0] - num_positive_preds)
+        if preds.shape[0] > 0:
+            imbalance_ratio = abs(num_positive_preds - num_negative_preds) / float(preds.shape[0])
+        else:
+            imbalance_ratio = 0.0
+        threshold_penalty = float(min(1.0, max(0.0, imbalance_ratio * float(penalty_weight))))
+        penalized_log_loss = logloss_val + threshold_penalty
+
         # labels=[0, 1] guarantees stable unpacking for degenerate splits.
         tn, fp, fn, tp = confusion_matrix(y_true, preds, labels=[0, 1]).ravel()
         sensitivity = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
@@ -680,6 +704,8 @@ class HospitalNode(HospitalLifecycleContract):
             "precision": precision_val,
             "recall": recall_val,
             "log_loss": logloss_val,
+            "penalized_log_loss": penalized_log_loss,
+            "threshold_penalty": threshold_penalty,
             "sensitivity": sensitivity,
             "specificity": specificity,
             "tn": int(tn),
@@ -814,15 +840,34 @@ class HospitalNode(HospitalLifecycleContract):
         # No model weights are used in the pure AI-agent workflow.
 
     def _apply_prompt_update(self, prompt_update: Mapping[str, Any]) -> None:
-        system_prompt = str(prompt_update.get("system_prompt", "")).strip()
-        if not system_prompt:
+        prompt_map = prompt_update.get("agents_prompts")
+        system_prompt = prompt_update.get("system_prompt")
+        if prompt_map is None and not system_prompt:
             return
+
+        def resolve_agent_prompt(cancer_type: str) -> str | None:
+            if isinstance(prompt_map, Mapping):
+                prompt = (
+                    prompt_map.get(cancer_type)
+                    or prompt_map.get(cancer_type.upper())
+                    or prompt_map.get("default")
+                )
+                if prompt:
+                    return str(prompt).strip()
+            return None
 
         for cancer_type in self.scope.agent_portfolio.cancer_types:
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             for pattern in agent.thinking_patterns:
-                if isinstance(pattern, AIThinkingPattern):
-                    pattern.prompt_prefix = system_prompt
+                if not isinstance(pattern, AIThinkingPattern):
+                    continue
+
+                agent_prompt = resolve_agent_prompt(cancer_type)
+                if agent_prompt:
+                    pattern.prompt_prefix = agent_prompt
+
+                if isinstance(system_prompt, str) and system_prompt.strip():
+                    pattern.llm_reasoner.set_system_prompt(system_prompt)
 
         self.metrics_store["prompt_evolution"] = prompt_update
         self.metrics_store["prompt_evolution_applied"] = True

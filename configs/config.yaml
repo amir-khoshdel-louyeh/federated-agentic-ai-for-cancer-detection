@@ -75,7 +75,8 @@ agents:
 # settings related to Agent reasoning
 inference:
   uncertainty_threshold: 0.6  # call tools when confidence is below 60%
-  decision_threshold: 0.5     # malignancy decision threshold (not used in the code)
+  decision_threshold: 0.8     # malignancy decision threshold
+  decision_threshold_penalty_weight: 0.5  # penalty weight for unbalanced all-positive/all-negative decisions
   max_retries_per_sample: 2
 
 prompt_evolution:
@@ -85,7 +86,13 @@ prompt_evolution:
   min_hospitals: 2
   golden_prompt_rollback: true
   performance_delta: 0.0
-  initial_system_prompt: "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement."
+  initial_system_prompt: "You are a medical AI assistant specialized in skin lesion analysis. Review the clinical lesion metadata, prioritize balanced diagnostic performance, and avoid overconfident all-positive or all-negative conclusions. Provide a malignancy probability, an uncertainty estimate, and a brief clinical reasoning statement. Output only a valid JSON object and treat both true positives and true negatives as equally important."
+  agents_prompts:
+    CANCER: "Review the clinical lesion metadata and estimate the overall malignancy likelihood. Provide probability, uncertainty, and concise clinical reasoning. Avoid defaulting to all malignant or all benign; prefer balanced decisions that maximize true positives and true negatives."
+    BCC: "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement specialized for basal cell carcinoma."
+    SCC: "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement specialized for squamous cell carcinoma."
+    MELANOMA: "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement specialized for melanoma."
+    AKIEC: "Review the clinical lesion metadata and provide a malignancy probability, uncertainty, and a brief clinical reasoning statement specialized for actinic keratosis / intraepithelial carcinoma."
 
 # ========================
 # LLM ENGINE (Local Llama)

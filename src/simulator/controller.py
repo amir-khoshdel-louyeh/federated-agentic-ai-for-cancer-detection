@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from configs.config_loader import load_config
 from pathlib import Path
 import logging
@@ -59,20 +60,32 @@ def make_hospitals(config, data_pipeline):
     local_llm_config = config.get("meta_agent", {}).get("local_llm", {})
     default_provider = config.get("meta_agent", {}).get("provider", "local")
     max_retries = int(config.get("inference", {}).get("max_retries_per_sample", 2))
-    prompt_prefix = config.get("prompt_evolution", {}).get("initial_system_prompt")
+    prompt_root = config.get("prompt_evolution", {})
+    system_prompt = prompt_root.get("initial_system_prompt")
+    prompt_map = prompt_root.get("agents_prompts")
     for hid in hospital_ids:
-        patterns = {
-            ct: create_thinking_pattern(
-                agent_patterns[ct],
-                pattern_config={
-                    "provider": default_provider,
-                    "local_llm_config": local_llm_config,
-                    "max_retries": max_retries,
-                    **({"prompt_prefix": prompt_prefix} if prompt_prefix else {}),
-                },
-            )
-            for ct in agent_patterns
-        }
+        patterns = {}
+        for ct in agent_patterns:
+            agent_prompt = None
+            if isinstance(prompt_map, Mapping):
+                agent_prompt = (
+                    prompt_map.get(ct)
+                    or prompt_map.get(ct.upper())
+                    or prompt_map.get("default")
+                )
+
+            pattern_kwargs = {
+                "provider": default_provider,
+                "local_llm_config": local_llm_config,
+                "max_retries": max_retries,
+                "system_prompt": system_prompt if isinstance(system_prompt, str) else None,
+            }
+            if agent_prompt:
+                pattern_kwargs["prompt_prefix"] = agent_prompt
+            elif isinstance(system_prompt, str):
+                pattern_kwargs["prompt_prefix"] = system_prompt
+
+            patterns[ct] = create_thinking_pattern(agent_patterns[ct], pattern_config=pattern_kwargs)
         portfolio = AgentPortfolio(
             initial_patterns=patterns,
             cancer_types=get_cancer_types(config),
@@ -365,10 +378,21 @@ def validation_system(hospitals, output_dir=None, early_stop_threshold=None, sav
                 continue
 
             metrics = hospital._metrics_from_cached_entries(raw_val_entries, cancer_type)
+            confusion = {
+                "tn": int(metrics.get("tn", 0)),
+                "fp": int(metrics.get("fp", 0)),
+                "fn": int(metrics.get("fn", 0)),
+                "tp": int(metrics.get("tp", 0)),
+            }
             hospital_validation[cancer_type] = {
                 "agent": pattern_name,
                 "metrics": metrics,
+                "confusion_matrix": confusion,
             }
+            logging.info(
+                f"Hospital {hid} [val] {cancer_type} confusion: TN={confusion['tn']} "
+                f"FP={confusion['fp']} FN={confusion['fn']} TP={confusion['tp']}"
+            )
 
         hospital.metrics_store.setdefault("validation", {})["results"] = hospital_validation
         hospital.metrics_store["lifecycle_state"] = "validated"
