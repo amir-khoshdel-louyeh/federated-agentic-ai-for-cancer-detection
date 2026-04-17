@@ -1,13 +1,39 @@
 import os
 import yaml
 from pathlib import Path
+from typing import Any
 
-def load_config(config_path=None, default_config_str=None):
+def _deep_update(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+def _generated_config_path(config: dict[str, Any] | None, config_path: str | None = None) -> Path:
+    if isinstance(config, dict):
+        prompt_cfg = config.get("prompt_evolution")
+        if isinstance(prompt_cfg, dict):
+            custom_path = prompt_cfg.get("generated_config_path")
+            if isinstance(custom_path, str) and custom_path.strip():
+                return Path(custom_path)
+
+    if isinstance(config, dict):
+        out_dir = config.get("out_dir", "outputs")
+    elif config_path is not None:
+        out_dir = "outputs"
+    else:
+        out_dir = "outputs"
+    return Path(out_dir) / "system" / "ai_generated_config.yaml"
+
+def load_config(config_path=None, default_config_str=None, load_generated_config=True):
     """
     Load YAML config from file. If not found, load from default_config_str (YAML string).
     Args:
         config_path: Path to config.yaml
         default_config_str: YAML string to use if file not found
+        load_generated_config: if True, overlay AI-generated config from output directory
     Returns:
         dict: Parsed config
     """
@@ -22,8 +48,23 @@ def load_config(config_path=None, default_config_str=None):
     else:
         raise FileNotFoundError(f"Config file not found at {config_path} and no default_config_str provided.")
 
-    if isinstance(config, dict):
-        config["_config_path"] = str(config_path)
+    if not isinstance(config, dict):
+        return config
+
+    config["_config_path"] = str(config_path)
+
+    if load_generated_config:
+        generated_path = _generated_config_path(config, str(config_path))
+        config["_generated_config_path"] = str(generated_path)
+        if generated_path.exists():
+            try:
+                with open(generated_path, "r", encoding="utf-8") as f:
+                    generated = yaml.safe_load(f)
+                if isinstance(generated, dict):
+                    _deep_update(config, generated)
+            except Exception:
+                pass
+
     return config
 
 def save_config(config, config_path=None):

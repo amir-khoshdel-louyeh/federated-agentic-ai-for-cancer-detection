@@ -361,9 +361,10 @@ class HospitalNode(HospitalLifecycleContract):
             logging.info(
                 f"Hospital {self.hospital_id}: inferring {cancer_type} on val={x_val.shape[0]} test={x_test.shape[0]} samples"
             )
+            threshold = self._decision_threshold_for(cancer_type)
             for idx, result in enumerate(val_results):
                 probability = float(result.get("probability", 0.0))
-                label = "malignant" if probability >= 0.5 else "benign"
+                label = "malignant" if probability >= threshold else "benign"
                 ground_truth = int(y_val[idx]) if idx < len(y_val) else 0
                 entry = {
                     "hospital_id": self.hospital_id,
@@ -377,14 +378,16 @@ class HospitalNode(HospitalLifecycleContract):
                     "clinical_reasoning": str(result.get("clinical_reasoning", "")),
                     "label": label,
                     "ground_truth": ground_truth,
-                    "correct": probability >= 0.5 and ground_truth == 1 or probability < 0.5 and ground_truth == 0,
+                    "correct": (probability >= threshold and ground_truth == 1) or (
+                        probability < threshold and ground_truth == 0
+                    ),
                     "cache_status": "ok",
                 }
                 self._append_inference_entry(entry)
 
             for idx, result in enumerate(test_results):
                 probability = float(result.get("probability", 0.0))
-                label = "malignant" if probability >= 0.5 else "benign"
+                label = "malignant" if probability >= threshold else "benign"
                 ground_truth = int(y_test[idx]) if idx < len(y_test) else 0
                 entry = {
                     "hospital_id": self.hospital_id,
@@ -398,7 +401,9 @@ class HospitalNode(HospitalLifecycleContract):
                     "clinical_reasoning": str(result.get("clinical_reasoning", "")),
                     "label": label,
                     "ground_truth": ground_truth,
-                    "correct": probability >= 0.5 and ground_truth == 1 or probability < 0.5 and ground_truth == 0,
+                    "correct": (probability >= threshold and ground_truth == 1) or (
+                        probability < threshold and ground_truth == 0
+                    ),
                     "cache_status": "ok",
                 }
                 self._append_inference_entry(entry)

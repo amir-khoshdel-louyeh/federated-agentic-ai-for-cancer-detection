@@ -182,21 +182,17 @@ def _extract_decision_threshold(response: Mapping[str, Any]) -> float | None:
     return None
 
 
-def _config_path_for_prompt_persistence(config: Mapping[str, Any] | None) -> str | None:
-    if not isinstance(config, Mapping):
-        return None
-    config_path = config.get("_config_path")
-    if isinstance(config_path, str) and config_path.strip():
-        return config_path
-    prompt_evolution_cfg = config.get("prompt_evolution")
-    if isinstance(prompt_evolution_cfg, Mapping):
-        path = prompt_evolution_cfg.get("_config_path")
-        if isinstance(path, str) and path.strip():
-            return path
-    default_path = os.path.join("configs", "config.yaml")
-    if Path(default_path).exists():
-        return default_path
-    return None
+def _generated_config_path(config: Mapping[str, Any] | None) -> Path:
+    if isinstance(config, Mapping):
+        prompt_cfg = config.get("prompt_evolution")
+        if isinstance(prompt_cfg, Mapping):
+            custom_path = prompt_cfg.get("generated_config_path")
+            if isinstance(custom_path, str) and custom_path.strip():
+                return Path(custom_path)
+        out_dir = config.get("out_dir", "outputs")
+    else:
+        out_dir = "outputs"
+    return Path(str(out_dir)) / "system" / "ai_generated_config.yaml"
 
 
 def _persist_prompt_update(
@@ -204,29 +200,23 @@ def _persist_prompt_update(
     decision_threshold: float | None,
     config: Mapping[str, Any] | None,
 ) -> None:
-    config_path = _config_path_for_prompt_persistence(config)
-    if not config_path:
-        return
+    generated_path = _generated_config_path(config)
+    generated_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if isinstance(config, dict):
-        prompt_section = config.setdefault("prompt_evolution", {})
-        if isinstance(prompt_section, dict):
-            prompt_section["initial_system_prompt"] = system_prompt
-
-        if decision_threshold is not None:
-            inference_section = config.setdefault("inference", {})
-            if isinstance(inference_section, dict):
-                inference_section["decision_threshold"] = float(decision_threshold)
+    generated_config: dict[str, Any] = {
+        "prompt_evolution": {"initial_system_prompt": system_prompt},
+    }
+    if decision_threshold is not None:
+        generated_config["inference"] = {"decision_threshold": float(decision_threshold)}
 
     try:
-        save_config(config, config_path)
+        save_config(generated_config, str(generated_path))
         logging.info(
-            "Persisted evolved system prompt%s to %s",
-            " and decision threshold" if decision_threshold is not None else "",
-            config_path,
+            "Persisted AI-generated config to %s",
+            generated_path,
         )
     except Exception as exc:
-        logging.warning("Failed to persist evolved system prompt or decision threshold: %s", exc)
+        logging.warning("Failed to persist AI-generated config: %s", exc)
 
 
 def evolve_prompt(
