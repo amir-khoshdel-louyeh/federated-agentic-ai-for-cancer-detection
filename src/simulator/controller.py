@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from configs.config_loader import load_config
 from pathlib import Path
 import logging
+import numpy as np
 from src.client_side.hospital.agent_portfolio import AgentPortfolio
 from src.client_side.hospital.hospital_node import HospitalNode
 from src.client_side.hospital.data_pipeline import LocalDataPipeline
@@ -378,8 +379,33 @@ def validation_system(hospitals, output_dir=None, early_stop_threshold=None, sav
                 }
                 continue
 
-            val_metrics = hospital._metrics_from_cached_entries(raw_val_entries, cancer_type) if raw_val_entries else {}
-            test_metrics = hospital._metrics_from_cached_entries(raw_test_entries, cancer_type) if raw_test_entries else {}
+            threshold = hospital._decision_threshold_for(cancer_type)
+            if raw_val_entries:
+                val_truth = np.array([int(entry.get("ground_truth", 0)) for entry in raw_val_entries], dtype=np.int64)
+                val_probs = np.array([float(entry.get("probability", 0.0)) for entry in raw_val_entries], dtype=np.float32)
+                threshold = hospital._find_optimal_threshold(val_truth, val_probs, penalty_weight=hospital.decision_threshold_penalty_weight)
+                hospital.decision_thresholds[str(cancer_type).strip().upper()] = threshold
+
+            val_metrics = (
+                hospital._compute_binary_metrics(
+                    np.array([int(entry.get("ground_truth", 0)) for entry in raw_val_entries], dtype=np.int64),
+                    np.array([float(entry.get("probability", 0.0)) for entry in raw_val_entries], dtype=np.float32),
+                    threshold=threshold,
+                    penalty_weight=hospital.decision_threshold_penalty_weight,
+                )
+                if raw_val_entries
+                else {}
+            )
+            test_metrics = (
+                hospital._compute_binary_metrics(
+                    np.array([int(entry.get("ground_truth", 0)) for entry in raw_test_entries], dtype=np.int64),
+                    np.array([float(entry.get("probability", 0.0)) for entry in raw_test_entries], dtype=np.float32),
+                    threshold=threshold,
+                    penalty_weight=hospital.decision_threshold_penalty_weight,
+                )
+                if raw_test_entries
+                else {}
+            )
             val_confusion = {
                 "tn": int(val_metrics.get("tn", 0)),
                 "fp": int(val_metrics.get("fp", 0)),
@@ -394,6 +420,7 @@ def validation_system(hospitals, output_dir=None, early_stop_threshold=None, sav
             }
             hospital_validation[cancer_type] = {
                 "agent": pattern_name,
+                "threshold": threshold,
                 "validation": {
                     "metrics": val_metrics,
                     "confusion_matrix": val_confusion,

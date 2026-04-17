@@ -75,8 +75,9 @@ agents:
 # settings related to Agent reasoning
 inference:
   uncertainty_threshold: 0.6  # call tools when confidence is below 60%
-  decision_threshold: 0.8     # malignancy decision threshold
+  decision_threshold: 0.5     # malignancy decision threshold
   decision_threshold_penalty_weight: 0.5  # penalty weight for unbalanced all-positive/all-negative decisions
+  request_delay_seconds: 0.2  # delay between LLM requests to smooth CPU/GPU load
   max_retries_per_sample: 2
 
 prompt_evolution:

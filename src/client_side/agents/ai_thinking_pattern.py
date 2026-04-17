@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import re
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -31,8 +32,10 @@ class AIThinkingPattern(ThinkingPattern):
         cache_file_name: str = "inference_cache.json",
         max_retries: int = 2,
         calibration_temperature: float = 0.1,
+        request_delay_seconds: float = 0.0,
     ) -> None:
         self.calibration_temperature = float(calibration_temperature)
+        self.request_delay_seconds = float(request_delay_seconds)
         if local_llm_config is None:
             local_llm_config = {}
         if "temperature" not in local_llm_config:
@@ -53,8 +56,9 @@ class AIThinkingPattern(ThinkingPattern):
             prompt_prefix
             or (
                 "You are a strict pathologist. Your duty is accurate diagnosis, not alarm. "
-                "If evidence is insufficient for malignancy, classify the lesion as benign. "
-                "Bias toward cancer wastes hospital resources. Use a careful, skeptical reasoning style."
+                "Avoid defaulting to all-positive or all-negative conclusions. "
+                "If evidence is weak, report a moderate probability and explain the uncertainty clearly. "
+                "Treat false negatives and false positives as equally important, and base the final classification on evidence strength."
             )
         )
         self.hospital_id = hospital_id
@@ -297,6 +301,8 @@ class AIThinkingPattern(ThinkingPattern):
                     "clinical_features": feature_map,
                 },
             )
+            if self.request_delay_seconds > 0.0:
+                time.sleep(self.request_delay_seconds)
             output = self._extract_structured_output(response)
             output["unique_id"] = unique_id
             output["features"] = feature_map
@@ -406,7 +412,7 @@ class AIThinkingPattern(ThinkingPattern):
             "List evidence that supports malignancy and evidence that supports benignity before you decide. "
             "Then reflect internally: could this lesion be benign, and if you have overestimated malignancy, reduce the probability. "
             "If you refer to prior cases, keep benign and malignant examples balanced and avoid over-weighting malignant cases. "
-            "If the evidence is weak, prefer benignity.\n"
+            "If the evidence is weak, avoid extreme probabilities and preserve a balanced confidence estimate.\n"
             "Use the following normalized clinical features for a lesion.\n"
             + "\n".join(feature_lines)
         )
@@ -433,7 +439,15 @@ class AIThinkingPattern(ThinkingPattern):
         if not text:
             return 0.5
 
-        match = re.search(r"([01]?(?:\.\d+))", text)
+        match = re.search(r"(?:probability|prob)\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
+        if match:
+            try:
+                value = float(match.group(1))
+                return float(max(0.0, min(1.0, value)))
+            except ValueError:
+                return 0.5
+
+        match = re.search(r"([01](?:\.\d+))", text)
         if match:
             try:
                 value = float(match.group(1))

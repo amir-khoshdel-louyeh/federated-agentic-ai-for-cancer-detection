@@ -128,6 +128,8 @@ class HospitalNode(HospitalLifecycleContract):
                 pattern_config.setdefault("local_llm_config", default_local_llm)
                 if default_api_key is not None:
                     pattern_config.setdefault("api_key", default_api_key)
+                inference_cfg = (self.config or {}).get("inference", {}) if self.config else {}
+                pattern_config.setdefault("request_delay_seconds", inference_cfg.get("request_delay_seconds", 0.0))
                 pattern_config.setdefault("hospital_id", self.hospital_id)
                 pattern_config.setdefault("cache_base_dir", self.config.get("out_dir", "outputs"))
                 pattern_config.setdefault("cache_file_name", "inference_cache.json")
@@ -155,6 +157,26 @@ class HospitalNode(HospitalLifecycleContract):
         if key in self.decision_thresholds:
             return self.decision_thresholds[key]
         return self.decision_threshold
+
+    @staticmethod
+    def _find_optimal_threshold(
+        y_true: np.ndarray,
+        probs: np.ndarray,
+        penalty_weight: float = 0.0,
+    ) -> float:
+        best_threshold = 0.5
+        best_score = float("-inf")
+        for threshold in np.linspace(0.0, 1.0, 101, dtype=np.float32):
+            metrics = HospitalNode._compute_binary_metrics(y_true, probs, threshold=float(threshold), penalty_weight=penalty_weight)
+            score = (
+                0.4 * metrics.get("f1", 0.0)
+                + 0.35 * metrics.get("recall", 0.0)
+                + 0.25 * metrics.get("specificity", 0.0)
+            )
+            if score > best_score or (score == best_score and abs(threshold - 0.5) < abs(best_threshold - 0.5)):
+                best_score = score
+                best_threshold = float(threshold)
+        return best_threshold
 
     def _detection_mode(self) -> str:
         if not self.config:
@@ -481,8 +503,33 @@ class HospitalNode(HospitalLifecycleContract):
             raw_val_entries = self._load_cached_predictions("val", cancer_type)
             raw_test_entries = self._load_cached_predictions("test", cancer_type)
 
-            val_metrics[prediction_key] = self._metrics_from_cached_entries(raw_val_entries, cancer_type)
-            test_metrics[prediction_key] = self._metrics_from_cached_entries(raw_test_entries, cancer_type)
+            threshold = self._decision_threshold_for(cancer_type)
+            if raw_val_entries:
+                val_truth = np.array([int(entry.get("ground_truth", 0)) for entry in raw_val_entries], dtype=np.int64)
+                val_probs = np.array([float(entry.get("probability", 0.0)) for entry in raw_val_entries], dtype=np.float32)
+                threshold = self._find_optimal_threshold(val_truth, val_probs, penalty_weight=self.decision_threshold_penalty_weight)
+                self.decision_thresholds[str(cancer_type).strip().upper()] = threshold
+
+            val_metrics[prediction_key] = (
+                self._compute_binary_metrics(
+                    np.array([int(entry.get("ground_truth", 0)) for entry in raw_val_entries], dtype=np.int64),
+                    np.array([float(entry.get("probability", 0.0)) for entry in raw_val_entries], dtype=np.float32),
+                    threshold=threshold,
+                    penalty_weight=self.decision_threshold_penalty_weight,
+                )
+                if raw_val_entries
+                else {}
+            )
+            test_metrics[prediction_key] = (
+                self._compute_binary_metrics(
+                    np.array([int(entry.get("ground_truth", 0)) for entry in raw_test_entries], dtype=np.int64),
+                    np.array([float(entry.get("probability", 0.0)) for entry in raw_test_entries], dtype=np.float32),
+                    threshold=threshold,
+                    penalty_weight=self.decision_threshold_penalty_weight,
+                )
+                if raw_test_entries
+                else {}
+            )
             val_reasoning[prediction_key] = self._load_cached_reasons(raw_val_entries)
             test_reasoning[prediction_key] = self._load_cached_reasons(raw_test_entries)
 
@@ -490,6 +537,7 @@ class HospitalNode(HospitalLifecycleContract):
                 "pattern": pattern_name,
                 "validation": val_metrics[prediction_key],
                 "test": test_metrics[prediction_key],
+                "selected_threshold": threshold,
                 "mean_validation_uncertainty": self._mean_uncertainty_from_entries(raw_val_entries),
                 "mean_test_uncertainty": self._mean_uncertainty_from_entries(raw_test_entries),
             }

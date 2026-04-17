@@ -333,8 +333,9 @@ class LLMReasoner:
 			return self._system_prompt_override
 		return (
 			"You are a strict clinical pathologist. Your duty is accurate diagnosis, not alarm. "
-			"If evidence is insufficient for malignancy, classify the lesion as benign. "
-			"Bias toward cancer wastes hospital resources. Use a cautious, skeptical style. "
+			"Avoid defaulting to all-positive or all-negative conclusions. "
+			"If evidence is weak, use a moderate probability with clear uncertainty rationale. "
+			"Treat false negatives and false positives as equally important, and base the final conclusion on the available evidence. "
 			"Respond with a single valid JSON object only. "
 			"The JSON object must contain exactly these keys: `probability` (a number between 0 and 1), "
 			"`uncertainty` (a number between 0 and 1), and `reasoning` (a short string). "
@@ -347,47 +348,75 @@ class LLMReasoner:
 		if not text:
 			return None
 
-		start_index = text.find("{")
-		if start_index == -1:
-			return None
+		json_candidates: list[str] = []
+		for start_index, char in enumerate(text):
+			if char != '{':
+				continue
 
-		depth = 0
-		in_string = False
-		escape = False
-		for index in range(start_index, len(text)):
-			char = text[index]
-			if in_string:
-				if escape:
-					escape = False
-				elif char == "\\":
-					escape = True
+			depth = 0
+			in_string = False
+			escape = False
+			for index in range(start_index, len(text)):
+				char = text[index]
+				if in_string:
+					if escape:
+						escape = False
+					elif char == "\\":
+						escape = True
+					elif char == '"':
+						in_string = False
 				elif char == '"':
-					in_string = False
-			elif char == '"':
-				in_string = True
-			elif char == '{':
-				depth += 1
-			elif char == '}':
-				depth -= 1
-				if depth == 0:
-					return text[start_index : index + 1]
+					in_string = True
+				elif char == '{':
+					depth += 1
+				elif char == '}':
+					depth -= 1
+					if depth == 0:
+						json_candidates.append(text[start_index : index + 1])
+						break
 
-		return None
+		if not json_candidates:
+			return None
+		return json_candidates[-1]
 
 	def _parse_json_response(self, text: str) -> dict[str, Any] | None:
 		json_text = self._extract_json(text)
-		if not json_text:
-			logging.warning("LLM response could not be parsed as JSON: %s", text)
-			return None
-		try:
-			return json.loads(json_text)
-		except (json.JSONDecodeError, ValueError) as exc:
-			logging.warning(
-				"Failed to decode JSON from LLM response after extracting braces: %s; extracted=%s",
-				repr(exc),
-				json_text,
-			)
-			return None
+		if json_text:
+			try:
+				return json.loads(json_text)
+			except (json.JSONDecodeError, ValueError) as exc:
+				logging.warning(
+					"Failed to decode JSON from LLM response after extracting braces: %s; extracted=%s",
+					repr(exc),
+					json_text,
+				)
+
+		# Fallback: try to pull basic fields from text if JSON parsing fails.
+		prob_match = re.search(r"(?:probability|prob)\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
+		unc_match = re.search(r"(?:uncertainty|confidence)\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
+		reasoning_match = re.search(r"reasoning\s*[:=]\s*\"([^\"]*)\"", text, re.I)
+		if prob_match or unc_match or reasoning_match:
+			result: dict[str, Any] = {}
+			if prob_match:
+				try:
+					result["probability"] = float(max(0.0, min(1.0, float(prob_match.group(1)))))
+				except (TypeError, ValueError):
+					pass
+			if unc_match:
+				try:
+					value = float(max(0.0, min(1.0, float(unc_match.group(1)))))
+					if "confidence" in unc_match.group(0).lower():
+						result["uncertainty"] = 1.0 - value
+					else:
+						result["uncertainty"] = value
+				except (TypeError, ValueError):
+					pass
+			if reasoning_match:
+				result["reasoning"] = reasoning_match.group(1).strip()
+			return result if result else None
+
+		logging.warning("LLM response could not be parsed as JSON: %s", text)
+		return None
 
 	def _fallback_reasoning(
 		self,
