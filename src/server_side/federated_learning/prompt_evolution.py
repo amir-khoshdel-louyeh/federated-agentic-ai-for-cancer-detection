@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -71,8 +72,12 @@ def _build_meta_prompt(
     prompt_lines.append(
         "You are a meta-agent that evolves the system prompt for clinical reasoning AI agents."
     )
-    prompt_lines.append("Analyze the following hospital reasoning examples and produce a better system prompt.")
-    prompt_lines.append("Return a single JSON object with the keys: system_prompt, summary.")
+    prompt_lines.append(
+        "Analyze the following hospital reasoning examples and produce a better system prompt and a recommended decision threshold for the next run."
+    )
+    prompt_lines.append(
+        "Return a single JSON object with the keys: system_prompt, decision_threshold, summary."
+    )
     prompt_lines.append("Do not include any extra text outside the JSON object.")
     if current_prompt:
         prompt_lines.append("\nCurrent system prompt:")
@@ -156,6 +161,27 @@ def _extract_system_prompt(response: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _extract_decision_threshold(response: Mapping[str, Any]) -> float | None:
+    if not isinstance(response, Mapping):
+        return None
+    json_payload = response.get("json")
+    if isinstance(json_payload, Mapping):
+        threshold = json_payload.get("decision_threshold")
+        try:
+            return float(threshold)
+        except (TypeError, ValueError):
+            pass
+    text = response.get("text")
+    if isinstance(text, str) and text.strip():
+        match = re.search(r"decision_threshold\s*[:=]\s*([0-9]*\.?[0-9]+)", text, re.I)
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                return None
+    return None
+
+
 def _config_path_for_prompt_persistence(config: Mapping[str, Any] | None) -> str | None:
     if not isinstance(config, Mapping):
         return None
@@ -173,7 +199,11 @@ def _config_path_for_prompt_persistence(config: Mapping[str, Any] | None) -> str
     return None
 
 
-def _persist_system_prompt(system_prompt: str, config: Mapping[str, Any] | None) -> None:
+def _persist_prompt_update(
+    system_prompt: str,
+    decision_threshold: float | None,
+    config: Mapping[str, Any] | None,
+) -> None:
     config_path = _config_path_for_prompt_persistence(config)
     if not config_path:
         return
@@ -183,11 +213,20 @@ def _persist_system_prompt(system_prompt: str, config: Mapping[str, Any] | None)
         if isinstance(prompt_section, dict):
             prompt_section["initial_system_prompt"] = system_prompt
 
+        if decision_threshold is not None:
+            inference_section = config.setdefault("inference", {})
+            if isinstance(inference_section, dict):
+                inference_section["decision_threshold"] = float(decision_threshold)
+
     try:
         save_config(config, config_path)
-        logging.info("Persisted evolved system prompt to %s", config_path)
+        logging.info(
+            "Persisted evolved system prompt%s to %s",
+            " and decision threshold" if decision_threshold is not None else "",
+            config_path,
+        )
     except Exception as exc:
-        logging.warning("Failed to persist evolved system prompt: %s", exc)
+        logging.warning("Failed to persist evolved system prompt or decision threshold: %s", exc)
 
 
 def evolve_prompt(
@@ -255,7 +294,7 @@ def evolve_prompt(
                 "instead of applying a new meta-agent rewrite."
             ),
         }
-        _persist_system_prompt(system_prompt, config)
+        _persist_prompt_update(system_prompt, None, config)
         return prompt_state
 
     observation = _build_meta_prompt(
@@ -283,6 +322,8 @@ def evolve_prompt(
         logging.warning("Prompt evolution meta-agent returned no usable system prompt.")
         return None
 
+    decision_threshold = _extract_decision_threshold(response)
+
     summary = None
     if isinstance(response.get("json"), Mapping):
         summary = response["json"].get("summary")
@@ -295,6 +336,7 @@ def evolve_prompt(
 
     prompt_state = {
         "system_prompt": system_prompt,
+        "decision_threshold": decision_threshold,
         "golden_system_prompt": golden_prompt,
         "previous_system_prompt": current_prompt,
         "best_system_prompt": best_system_prompt,
@@ -306,5 +348,5 @@ def evolve_prompt(
         "reverted": False,
         "prompt_source": "meta_agent",
     }
-    _persist_system_prompt(system_prompt, config)
+    _persist_prompt_update(system_prompt, decision_threshold, config)
     return prompt_state

@@ -60,8 +60,15 @@ class HospitalNode(HospitalLifecycleContract):
         self.isic_metadata_csv = Path(isic_metadata_csv) if isic_metadata_csv is not None else None
         self.config = config
         training_cfg = (config.get("training", {}) or {}) if config else {}
+        inference_cfg = (config.get("inference", {}) or {}) if config else {}
         self.decision_threshold = float(
-            training_cfg.get("decision_threshold", config.get("decision_threshold", 0.5) if config else 0.5)
+            training_cfg.get(
+                "decision_threshold",
+                inference_cfg.get(
+                    "decision_threshold",
+                    config.get("decision_threshold", 0.5) if config else 0.5,
+                ),
+            )
         ) if config else 0.5
         self.decision_thresholds = {}
         if config:
