@@ -58,6 +58,7 @@ def make_hospitals(config, data_pipeline):
     hospitals = {}
     local_llm_config = config.get("meta_agent", {}).get("local_llm", {})
     default_provider = config.get("meta_agent", {}).get("provider", "local")
+    max_retries = int(config.get("inference", {}).get("max_retries_per_sample", 2))
     prompt_prefix = config.get("prompt_evolution", {}).get("initial_system_prompt")
     for hid in hospital_ids:
         patterns = {
@@ -66,6 +67,7 @@ def make_hospitals(config, data_pipeline):
                 pattern_config={
                     "provider": default_provider,
                     "local_llm_config": local_llm_config,
+                    "max_retries": max_retries,
                     **({"prompt_prefix": prompt_prefix} if prompt_prefix else {}),
                 },
             )

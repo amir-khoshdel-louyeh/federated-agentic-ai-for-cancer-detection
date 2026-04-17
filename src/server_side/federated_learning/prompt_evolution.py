@@ -10,6 +10,8 @@ DEFAULT_PROMPT_EVOLUTION_CONFIG = {
     "top_k_hospitals": 1,
     "bottom_k_hospitals": 1,
     "min_hospitals": 2,
+    "golden_prompt_rollback": True,
+    "performance_delta": 0.0,
 }
 
 
@@ -28,6 +30,14 @@ def _score_hospital_update(local_update: Mapping[str, Any]) -> float:
         scores.append(0.7 * auc + 0.3 * f1)
 
     return float(sum(scores) / len(scores)) if scores else 0.0
+
+
+def _global_metrics_score(metrics: Mapping[str, Any] | None) -> float:
+    if not isinstance(metrics, Mapping):
+        return 0.0
+    auc = float(metrics.get("auc", 0.0))
+    f1 = float(metrics.get("f1", 0.0))
+    return 0.7 * auc + 0.3 * f1
 
 
 def _extract_reasoning_snippets(local_update: Mapping[str, Any], key: str) -> list[str]:
@@ -149,6 +159,7 @@ def evolve_prompt(
     previous_global_state: Mapping[str, Any] | None = None,
     config: Mapping[str, Any] | None = None,
     round_index: int = 0,
+    current_global_metrics: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Any] | None:
     config = config or {}
     evolution_cfg = dict(DEFAULT_PROMPT_EVOLUTION_CONFIG)
@@ -167,11 +178,45 @@ def evolve_prompt(
     if not best:
         return None
 
-    current_prompt = None
-    if previous_global_state is not None:
-        current_prompt = previous_global_state.get("prompt_evolution", {}).get("system_prompt")
-    if not current_prompt and isinstance(config, Mapping):
-        current_prompt = config.get("prompt_evolution", {}).get("initial_system_prompt")
+    previous_prompt_evolution = previous_global_state.get("prompt_evolution", {}) if previous_global_state is not None else {}
+    current_prompt = previous_prompt_evolution.get("system_prompt")
+    golden_prompt = (
+        previous_prompt_evolution.get("golden_system_prompt")
+        or (config.get("prompt_evolution", {}).get("initial_system_prompt") if isinstance(config, Mapping) else None)
+        or current_prompt
+    )
+    if not current_prompt:
+        current_prompt = golden_prompt
+
+    best_system_prompt = previous_prompt_evolution.get("best_system_prompt") or current_prompt
+    best_global_metrics = previous_prompt_evolution.get("best_global_metrics") or current_global_metrics or {}
+
+    current_score = _global_metrics_score(current_global_metrics)
+    best_score = _global_metrics_score(best_global_metrics)
+    performance_delta = float(evolution_cfg.get("performance_delta", 0.0))
+
+    if (
+        evolution_cfg.get("golden_prompt_rollback", False)
+        and best_system_prompt
+        and best_score > 0.0
+        and current_score + performance_delta < best_score
+    ):
+        return {
+            "system_prompt": best_system_prompt,
+            "golden_system_prompt": golden_prompt,
+            "previous_system_prompt": current_prompt,
+            "best_system_prompt": best_system_prompt,
+            "best_global_metrics": best_global_metrics,
+            "top_hospitals": [hid for hid, _ in best],
+            "bottom_hospitals": [hid for hid, _ in worst],
+            "generated_at_utc": None,
+            "reverted": True,
+            "prompt_source": "fallback",
+            "summary": (
+                "Performance decreased relative to the best prior prompt, so the best known prompt is preserved "
+                "instead of applying a new meta-agent rewrite."
+            ),
+        }
 
     observation = _build_meta_prompt(
         top_hospitals=best,
@@ -204,10 +249,20 @@ def evolve_prompt(
     if not isinstance(summary, str):
         summary = "Derived new system prompt from top-performing and lower-performing hospital reasoning."
 
+    if current_score >= best_score:
+        best_system_prompt = current_prompt
+        best_global_metrics = current_global_metrics or best_global_metrics
+
     return {
         "system_prompt": system_prompt,
+        "golden_system_prompt": golden_prompt,
+        "previous_system_prompt": current_prompt,
+        "best_system_prompt": best_system_prompt,
+        "best_global_metrics": best_global_metrics,
         "summary": summary,
         "top_hospitals": [hid for hid, _ in best],
         "bottom_hospitals": [hid for hid, _ in worst],
         "generated_at_utc": response.get("generated_at_utc") if isinstance(response, Mapping) else None,
+        "reverted": False,
+        "prompt_source": "meta_agent",
     }

@@ -28,6 +28,7 @@ class AIThinkingPattern(ThinkingPattern):
         hospital_id: str | None = None,
         cache_base_dir: str | None = None,
         cache_file_name: str = "inference_cache.json",
+        max_retries: int = 2,
     ) -> None:
         self.llm_reasoner = llm_reasoner or LLMReasoner(
             provider=provider,
@@ -42,6 +43,7 @@ class AIThinkingPattern(ThinkingPattern):
         self.hospital_id = hospital_id
         self.cache_base_dir = cache_base_dir or "outputs"
         self.cache_file_name = cache_file_name
+        self.max_retries = int(max_retries)
         self._last_structured_input: np.ndarray | None = None
         self._last_structured_outputs: list[dict[str, Any]] | None = None
 
@@ -103,6 +105,12 @@ class AIThinkingPattern(ThinkingPattern):
             if entry.get("cache_status") == "failed":
                 continue
             return entry
+        return None
+
+    def _find_cache_entry_by_unique_id(self, unique_id: str) -> dict[str, Any] | None:
+        for entry in self._load_local_cache() or ():
+            if entry.get("unique_id") == unique_id:
+                return entry
         return None
 
     def _rewrite_local_cache(self, entries: list[dict[str, Any]]) -> None:
@@ -249,8 +257,21 @@ class AIThinkingPattern(ThinkingPattern):
                 logging.info(f"AIThinkingPattern cache hit for {self.name} unique_id={unique_id}")
                 structured_results.append(cached_entry)
                 continue
-            logging.info(f"AIThinkingPattern cache miss for {self.name} unique_id={unique_id}; calling LLM")
 
+            failed_entry = self._find_cache_entry_by_unique_id(unique_id)
+            if failed_entry is not None and failed_entry.get("cache_status") == "failed":
+                retry_count = int(failed_entry.get("retry_count", 0))
+                if retry_count >= self.max_retries:
+                    logging.info(
+                        f"AIThinkingPattern max retries reached for {self.name} unique_id={unique_id}; reusing failed cache entry"
+                    )
+                    structured_results.append(failed_entry)
+                    continue
+                logging.info(
+                    f"AIThinkingPattern retrying failed sample for {self.name} unique_id={unique_id}; retry_count={retry_count}"
+                )
+
+            logging.info(f"AIThinkingPattern cache miss for {self.name} unique_id={unique_id}; calling LLM")
             experience_context = self._build_experience_context(feature_map, self.name)
             response = self.llm_reasoner.generate_reasoning(
                 "AI_AGENT",
@@ -264,7 +285,10 @@ class AIThinkingPattern(ThinkingPattern):
             output["features"] = feature_map
             output["label"] = "malignant" if output["probability"] >= 0.5 else "benign"
             output["cancer_type"] = self.name
-            self._append_cache_entry(output)
+            output["cache_status"] = "ok"
+            output["retry_count"] = int(failed_entry.get("retry_count", 0)) + 1 if failed_entry is not None else 0
+
+            self._replace_cache_entry(output)
             structured_results.append(output)
 
         self._cache_structured_outputs(x, structured_results)

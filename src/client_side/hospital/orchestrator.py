@@ -94,6 +94,7 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 			local_updates=local_updates,
 			previous_global_state=prior_state,
 			round_index=round_index,
+			current_global_metrics=aggregation.global_metrics,
 		)
 		if prompt_update is not None:
 			global_state["prompt_evolution"] = prompt_update
@@ -120,6 +121,7 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		local_updates: Mapping[str, LocalHospitalUpdatePayload],
 		previous_global_state: Mapping[str, Any] | None,
 		round_index: int,
+		current_global_metrics: Mapping[str, Any] | None,
 	) -> dict[str, Any] | None:
 		"""Optionally evolve the system prompt after a federated round."""
 		if not self.prompt_evolution_config:
@@ -130,6 +132,7 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 				previous_global_state=previous_global_state,
 				config=self.prompt_evolution_config,
 				round_index=round_index,
+				current_global_metrics=current_global_metrics,
 			)
 		except Exception as exc:
 			logging.warning("Prompt evolution failed: %s", exc)
