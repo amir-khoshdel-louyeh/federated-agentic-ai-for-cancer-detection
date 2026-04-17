@@ -369,30 +369,51 @@ def validation_system(hospitals, output_dir=None, early_stop_threshold=None, sav
                 continue
 
             raw_val_entries = hospital._load_cached_predictions("val", cancer_type)
-            if not raw_val_entries:
+            raw_test_entries = hospital._load_cached_predictions("test", cancer_type)
+            if not raw_val_entries and not raw_test_entries:
                 hospital_validation[cancer_type] = {
                     "agent": pattern_name,
                     "metrics": {},
-                    "warning": "No validation samples for this cancer type.",
+                    "warning": "No validation or test samples for this cancer type.",
                 }
                 continue
 
-            metrics = hospital._metrics_from_cached_entries(raw_val_entries, cancer_type)
-            confusion = {
-                "tn": int(metrics.get("tn", 0)),
-                "fp": int(metrics.get("fp", 0)),
-                "fn": int(metrics.get("fn", 0)),
-                "tp": int(metrics.get("tp", 0)),
+            val_metrics = hospital._metrics_from_cached_entries(raw_val_entries, cancer_type) if raw_val_entries else {}
+            test_metrics = hospital._metrics_from_cached_entries(raw_test_entries, cancer_type) if raw_test_entries else {}
+            val_confusion = {
+                "tn": int(val_metrics.get("tn", 0)),
+                "fp": int(val_metrics.get("fp", 0)),
+                "fn": int(val_metrics.get("fn", 0)),
+                "tp": int(val_metrics.get("tp", 0)),
+            }
+            test_confusion = {
+                "tn": int(test_metrics.get("tn", 0)),
+                "fp": int(test_metrics.get("fp", 0)),
+                "fn": int(test_metrics.get("fn", 0)),
+                "tp": int(test_metrics.get("tp", 0)),
             }
             hospital_validation[cancer_type] = {
                 "agent": pattern_name,
-                "metrics": metrics,
-                "confusion_matrix": confusion,
+                "validation": {
+                    "metrics": val_metrics,
+                    "confusion_matrix": val_confusion,
+                },
+                "test": {
+                    "metrics": test_metrics,
+                    "confusion_matrix": test_confusion,
+                },
             }
-            logging.info(
-                f"Hospital {hid} [val] {cancer_type} confusion: TN={confusion['tn']} "
-                f"FP={confusion['fp']} FN={confusion['fn']} TP={confusion['tp']}"
-            )
+
+            if raw_val_entries:
+                logging.info(
+                    f"Hospital {hid} [val] {cancer_type} confusion: TN={val_confusion['tn']} "
+                    f"FP={val_confusion['fp']} FN={val_confusion['fn']} TP={val_confusion['tp']}"
+                )
+            if raw_test_entries:
+                logging.info(
+                    f"Hospital {hid} [test] {cancer_type} confusion: TN={test_confusion['tn']} "
+                    f"FP={test_confusion['fp']} FN={test_confusion['fn']} TP={test_confusion['tp']}"
+                )
 
         hospital.metrics_store.setdefault("validation", {})["results"] = hospital_validation
         hospital.metrics_store["lifecycle_state"] = "validated"
