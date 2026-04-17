@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from configs.config_loader import save_config
 from src.client_side.agents import LLMReasoner
 
 DEFAULT_PROMPT_EVOLUTION_CONFIG = {
@@ -153,6 +156,40 @@ def _extract_system_prompt(response: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _config_path_for_prompt_persistence(config: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(config, Mapping):
+        return None
+    config_path = config.get("_config_path")
+    if isinstance(config_path, str) and config_path.strip():
+        return config_path
+    prompt_evolution_cfg = config.get("prompt_evolution")
+    if isinstance(prompt_evolution_cfg, Mapping):
+        path = prompt_evolution_cfg.get("_config_path")
+        if isinstance(path, str) and path.strip():
+            return path
+    default_path = os.path.join("configs", "config.yaml")
+    if Path(default_path).exists():
+        return default_path
+    return None
+
+
+def _persist_system_prompt(system_prompt: str, config: Mapping[str, Any] | None) -> None:
+    config_path = _config_path_for_prompt_persistence(config)
+    if not config_path:
+        return
+
+    if isinstance(config, dict):
+        prompt_section = config.setdefault("prompt_evolution", {})
+        if isinstance(prompt_section, dict):
+            prompt_section["initial_system_prompt"] = system_prompt
+
+    try:
+        save_config(config, config_path)
+        logging.info("Persisted evolved system prompt to %s", config_path)
+    except Exception as exc:
+        logging.warning("Failed to persist evolved system prompt: %s", exc)
+
+
 def evolve_prompt(
     *,
     local_updates: Mapping[str, Mapping[str, Any]],
@@ -201,8 +238,9 @@ def evolve_prompt(
         and best_score > 0.0
         and current_score + performance_delta < best_score
     ):
-        return {
-            "system_prompt": best_system_prompt,
+        system_prompt = best_system_prompt
+        prompt_state = {
+            "system_prompt": system_prompt,
             "golden_system_prompt": golden_prompt,
             "previous_system_prompt": current_prompt,
             "best_system_prompt": best_system_prompt,
@@ -217,6 +255,8 @@ def evolve_prompt(
                 "instead of applying a new meta-agent rewrite."
             ),
         }
+        _persist_system_prompt(system_prompt, config)
+        return prompt_state
 
     observation = _build_meta_prompt(
         top_hospitals=best,
@@ -253,7 +293,7 @@ def evolve_prompt(
         best_system_prompt = current_prompt
         best_global_metrics = current_global_metrics or best_global_metrics
 
-    return {
+    prompt_state = {
         "system_prompt": system_prompt,
         "golden_system_prompt": golden_prompt,
         "previous_system_prompt": current_prompt,
@@ -266,3 +306,5 @@ def evolve_prompt(
         "reverted": False,
         "prompt_source": "meta_agent",
     }
+    _persist_system_prompt(system_prompt, config)
+    return prompt_state
