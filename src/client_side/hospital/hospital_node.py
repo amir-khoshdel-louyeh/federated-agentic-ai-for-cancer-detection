@@ -482,7 +482,7 @@ class HospitalNode(HospitalLifecycleContract):
         )
 
     def train(self) -> None:
-        """Legacy alias for AI-agent inference and cache generation."""
+        """Run local agent inference and generate the hospital's inference cache."""
         return self.infer_and_cache()
 
     def evaluate(self) -> dict[str, Any]:
@@ -880,6 +880,20 @@ class HospitalNode(HospitalLifecycleContract):
         """FL-ready alias for exporting local hospital updates.
         If for_training is True, fill metrics.per_agent with dummy values to pass validation.
         """
+        if self.metrics_store.get("lifecycle_state") != "evaluated":
+            logging.info(
+                "Hospital %s: running evaluation before exporting local update.",
+                self.hospital_id,
+            )
+            try:
+                self.evaluate()
+            except Exception as exc:
+                logging.warning(
+                    "Hospital %s evaluation failed during local update export: %s",
+                    self.hospital_id,
+                    repr(exc),
+                )
+
         local_update = self.export_update(for_training=for_training)
         self.metrics_store["last_local_update_exported"] = True
         return local_update
@@ -891,10 +905,21 @@ class HospitalNode(HospitalLifecycleContract):
 
         prompt_update = global_state.get("prompt_evolution")
         if isinstance(prompt_update, Mapping):
+            logging.info(
+                "Hospital %s: applying prompt evolution update from global state.",
+                self.hospital_id,
+            )
             self._apply_prompt_update(prompt_update)
 
-        # Attempt model weights sync if available
-        # No model weights are used in the pure AI-agent workflow.
+        model_weights = global_state.get("model_weights")
+        if model_weights is not None:
+            self.metrics_store["global_model_weights"] = model_weights
+            logging.info(
+                "Hospital %s: received global model weights in state update.",
+                self.hospital_id,
+            )
+
+        # No model weights are used in the pure AI-agent workflow, but the placeholder is stored for future use.
 
     def _apply_prompt_update(self, prompt_update: Mapping[str, Any]) -> None:
         prompt_map = prompt_update.get("agents_prompts") or prompt_update.get("agent_prompts")

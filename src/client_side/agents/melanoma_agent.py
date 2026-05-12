@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 
 from .base import LLMReasoner, SkinCancerAgent, ThinkingPattern
-from .tools import SearchTool, Tool, VisualAnalysisTool
+from .tools import MedicalKnowledgeBaseTool, SearchTool, Tool, VisualAnalysisTool
 
 
 class MelanomaAgent(SkinCancerAgent):
@@ -18,7 +18,7 @@ class MelanomaAgent(SkinCancerAgent):
         tools: list[Tool] | None = None,
         uncertainty_threshold: float = 0.4,
     ) -> None:
-        default_tools = tools or [SearchTool(), VisualAnalysisTool()]
+        default_tools = tools or [SearchTool(), MedicalKnowledgeBaseTool(), VisualAnalysisTool()]
         super().__init__(thinking_patterns=thinking_pattern, llm_reasoner=llm_reasoner, tools=default_tools)
         self.uncertainty_threshold = uncertainty_threshold
 
@@ -57,10 +57,15 @@ class MelanomaAgent(SkinCancerAgent):
             else:
                 reasoning_text = obs.get("clinical_reasoning", "")
 
+            probability = float(obs.get("probability", 0.0))
+            uncertainty = float(obs.get("uncertainty", 0.0))
             results.append(
                 {
-                    "probability": float(obs.get("probability", 0.0)),
-                    "uncertainty": float(obs.get("uncertainty", 0.0)),
+                    "cancer_type": self.cancer_type,
+                    "diagnosis": "cancer type found" if probability >= 0.5 else "not found",
+                    "probability": probability,
+                    "confidence": float(max(0.0, min(1.0, 1.0 - uncertainty))),
+                    "uncertainty": uncertainty,
                     "clinical_reasoning": reasoning_text,
                     "observations": obs,
                 }

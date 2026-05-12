@@ -330,9 +330,11 @@ class LLMReasoner:
 			pattern_lines.append(f"  details: {pattern.get('details', '')}")
 
 		prompt = (
-			"You are a clinical assistant. Based on the following pattern outputs, "
-			"provide a concise diagnostic probability and a clinical reasoning statement. "
-			"Use the cancer type and available patient context to explain why the final probability is chosen.\n\n"
+			"You are a clinical assistant and medical skill executor. This is an OpenClaw-style Skill: "
+			"combine Prompt + Logic + Tools to reach a binary diagnosis. "
+			"Use the cancer type, evidence, and any available tool results to explain why the final probability is chosen.\n\n"
+			"If the Medical Knowledge Base tool is available, consult it for evidence and cite that evidence in your reasoning. "
+			"Produce a final binary conclusion of either 'present' or 'not present' for the target cancer type, along with probability and clinical justification.\n\n"
 			f"Cancer type: {cancer_type}\n"
 			+ "\n".join(context_lines)
 			+ "\n\n"
@@ -475,6 +477,10 @@ class SkinCancerAgent(ABC):
 	Fixed cancer-domain agent with runtime-switchable thinking patterns.
 
 	Agents can aggregate multiple ThinkingPatterns and use an LLM reasoner for final output.
+	An OpenClaw-style agent skill is defined here as a combination of:
+	- Prompt: the LLM reasoning instruction and clinical context,
+	- Logic: the aggregated pattern outputs and decision boundary,
+	- Tools: diagnostic helpers such as a medical knowledge base and visual analysis.
 	"""
 
 	def __init__(
@@ -509,6 +515,28 @@ class SkinCancerAgent(ABC):
 	@property
 	def name(self) -> str:
 		return f"{self.cancer_type.lower()}::{self.thinking_pattern_name}"
+
+	@property
+	def skill_components(self) -> dict[str, Any]:
+		return {
+			"prompt": f"Diagnose {self.cancer_type} using structured clinical evidence, aggregated pattern predictions, and tool-assisted reasoning.",
+			"logic": "Aggregate predictive pattern outputs, evaluate uncertainty, and use tools when evidence is insufficient for a confident binary decision.",
+			"tools": [tool.name for tool in self._tools],
+		}
+
+	def _format_agent_diagnosis(self, probability: float, uncertainty: float, reasoning: str, observations: dict[str, Any]) -> dict[str, Any]:
+		threshold = 0.5
+		diagnosis_text = "cancer type found" if probability >= threshold else "not found"
+		confidence = float(max(0.0, min(1.0, 1.0 - uncertainty)))
+		return {
+			"cancer_type": self.cancer_type,
+			"diagnosis": diagnosis_text,
+			"probability": probability,
+			"confidence": confidence,
+			"uncertainty": uncertainty,
+			"clinical_reasoning": reasoning,
+			"observations": observations,
+		}
 
 	def set_thinking_pattern(self, thinking_pattern: ThinkingPattern | list[ThinkingPattern]) -> None:
 		if isinstance(thinking_pattern, ThinkingPattern):
@@ -691,11 +719,4 @@ class SkinCancerAgent(ABC):
 					uncertainty = float(max(0.0, min(1.0, float(response_json.get("uncertainty", uncertainty)))))
 				except (TypeError, ValueError):
 					uncertainty = uncertainty
-			results.append(
-				{
-					"probability": probability,
-					"uncertainty": uncertainty,
-					"clinical_reasoning": reasoning_text,
-					"observations": obs,
-				}
-			)
+results.append(self._format_agent_diagnosis(probability, uncertainty, reasoning_text, obs))

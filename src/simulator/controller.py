@@ -488,5 +488,4 @@ def validation_system(hospitals, output_dir=None, early_stop_threshold=None, sav
     #   show_log_location(config)
 
 
-# Alias for backward compatibility with legacy imports.
-train_system = federated_evaluation_round
+

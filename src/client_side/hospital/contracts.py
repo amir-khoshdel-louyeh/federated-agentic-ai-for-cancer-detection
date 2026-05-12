@@ -35,8 +35,6 @@ class AgentPortfolioContract(Protocol):
     def selected_patterns(self) -> dict[str, str]:
         ...
 
-    # Legacy batch convenience is removed because explicit per-agent workflows are handled at caller level.
-
 
 class PatternPolicyContract(Protocol):
     """Contract for assigning active thinking patterns per cancer type."""

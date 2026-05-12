@@ -70,13 +70,16 @@ def _build_meta_prompt(
 ) -> dict[str, Any]:
     prompt_lines: list[str] = []
     prompt_lines.append(
-        "You are a meta-agent that evolves the system prompt for clinical reasoning AI agents."
+        "You are a meta-agent that performs server-side meta-analysis for clinical reasoning AI agents."
     )
     prompt_lines.append(
-        "Analyze the following hospital reasoning examples and produce a better system prompt and a recommended decision threshold for the next run."
+        "Analyze the following hospital reasoning examples and explain in natural language why the model performed well in some hospitals and poorly in others."
     )
     prompt_lines.append(
-        "Return a single JSON object with the keys: system_prompt, decision_threshold, summary."
+        "Provide a better system prompt, a recommended decision threshold for the next run, and a concise meta-analysis report describing regional failure modes."
+    )
+    prompt_lines.append(
+        "Return a single JSON object with the keys: system_prompt, decision_threshold, summary, meta_analysis."
     )
     prompt_lines.append("Do not include any extra text outside the JSON object.")
     if current_prompt:
@@ -179,6 +182,23 @@ def _extract_decision_threshold(response: Mapping[str, Any]) -> float | None:
                 return float(match.group(1))
             except ValueError:
                 return None
+    return None
+
+
+def _extract_meta_analysis(response: Mapping[str, Any]) -> str | None:
+    if not isinstance(response, Mapping):
+        return None
+    json_payload = response.get("json")
+    if isinstance(json_payload, Mapping):
+        candidate = response["json"].get("meta_analysis")
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    text = response.get("text")
+    if isinstance(text, str) and text.strip():
+        # Fallback: capture the lower part of the response if it contains meta-analysis hints.
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if lines:
+            return " ".join(lines[-3:])
     return None
 
 
@@ -320,6 +340,12 @@ def evolve_prompt(
     if not isinstance(summary, str):
         summary = "Derived new system prompt from top-performing and lower-performing hospital reasoning."
 
+    meta_analysis = _extract_meta_analysis(response)
+    if not isinstance(meta_analysis, str):
+        meta_analysis = (
+            "Meta-analysis was generated from top and bottom hospitals, highlighting regional failure patterns and prompt improvement opportunities."
+        )
+
     if current_score >= best_score:
         best_system_prompt = current_prompt
         best_global_metrics = current_global_metrics or best_global_metrics
@@ -332,6 +358,7 @@ def evolve_prompt(
         "best_system_prompt": best_system_prompt,
         "best_global_metrics": best_global_metrics,
         "summary": summary,
+        "meta_analysis": meta_analysis,
         "top_hospitals": [hid for hid, _ in best],
         "bottom_hospitals": [hid for hid, _ in worst],
         "generated_at_utc": response.get("generated_at_utc") if isinstance(response, Mapping) else None,

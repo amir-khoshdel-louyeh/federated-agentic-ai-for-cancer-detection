@@ -56,9 +56,22 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		self,
 		hospitals: Mapping[str, HospitalFederatedClient],
 	) -> dict[str, LocalHospitalUpdatePayload]:
-		"""Collect local updates from provided hospital clients."""
+		"""Collect local updates from provided hospital clients.
+
+		This method ensures each hospital has evaluated its local results before exporting
+		its update payload for validation and aggregation.
+		"""
 		updates: dict[str, LocalHospitalUpdatePayload] = {}
 		for hospital_id, hospital in hospitals.items():
+			if getattr(hospital, "metrics_store", {}).get("lifecycle_state") != "evaluated":
+				try:
+					hospital.evaluate()
+				except Exception as exc:
+					logging.warning(
+						"Hospital %s evaluation failed before local update export: %s",
+						hospital_id,
+						repr(exc),
+					)
 			update = hospital.get_local_update()
 			updates[hospital_id] = update
 		return updates
@@ -137,8 +150,6 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		except Exception as exc:
 			logging.warning("Prompt evolution failed: %s", exc)
 			return None
-
-# run_round_from_hospitals and run are deprecated in this minimal pipeline and removed for cleanup.
 
 	def run_with_early_stopping(
 		self,
@@ -258,6 +269,11 @@ class FederatedRoundOrchestrator(FederatedOrchestratorContract):
 		global_state: Mapping[str, Any],
 	) -> None:
 		"""Broadcast global state to all participating hospitals."""
-		for hospital in hospitals.values():
+		for hospital_id, hospital in hospitals.items():
+			logging.info(
+				"Broadcasting global state to hospital %s: round=%s", 
+				hospital_id,
+				global_state.get("round_index"),
+			)
 			hospital.apply_global_update(global_state)
 

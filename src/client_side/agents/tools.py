@@ -43,14 +43,14 @@ class SearchTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Look up the latest clinical guidelines for a melanoma lesion type."
+        return "Look up the latest clinical guidelines for a lesion type."
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "lesion_type": {
                 "type": "string",
-                "description": "The lesion type or melanoma subtype to look up.",
+                "description": "The lesion type or cancer subtype to look up.",
                 "required": True,
             },
             "query": {
@@ -61,11 +61,11 @@ class SearchTool(Tool):
         }
 
     def execute(self, **kwargs: Any) -> dict[str, Any]:
-        lesion_type = kwargs.get("lesion_type", "melanoma")
+        lesion_type = kwargs.get("lesion_type", "cancer")
         query = kwargs.get("query")
         summary = (
             f"Retrieved latest clinical guideline summary for {lesion_type}. "
-            f"Focus on staging, dermoscopic criteria, and follow-up recommendations."
+            f"Focus on staging, diagnostic criteria, and supporting evidence."
         )
         if query:
             summary += f" Search query: {query}."
@@ -74,6 +74,54 @@ class SearchTool(Tool):
             "lesion_type": lesion_type,
             "query": query,
             "result": summary,
+        }
+
+
+class MedicalKnowledgeBaseTool(Tool):
+    @property
+    def name(self) -> str:
+        return "medical_knowledge_base"
+
+    @property
+    def description(self) -> str:
+        return "Consult a medical knowledge base for evidence and diagnostic criteria relevant to the cancer type."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "cancer_type": {
+                "type": "string",
+                "description": "The cancer type being evaluated.",
+                "required": True,
+            },
+            "feature_summary": {
+                "type": "string",
+                "description": "A brief summary of the clinical features or evidence being considered.",
+                "required": True,
+            },
+            "query": {
+                "type": "string",
+                "description": "Optional targeted query for additional domain evidence.",
+                "required": False,
+            },
+        }
+
+    def execute(self, **kwargs: Any) -> dict[str, Any]:
+        cancer_type = kwargs.get("cancer_type", "cancer")
+        feature_summary = kwargs.get("feature_summary", "clinical features not provided")
+        query = kwargs.get("query")
+        evidence = (
+            f"Medical knowledge base indicates that {cancer_type} diagnosis should be based on patterns such as asymmetry, border irregularity, color variation, and lesion history. "
+            f"The current evidence summary is: {feature_summary}."
+        )
+        if query:
+            evidence += f" Focused knowledge query: {query}."
+        return {
+            "tool": self.name,
+            "cancer_type": cancer_type,
+            "feature_summary": feature_summary,
+            "query": query,
+            "result": evidence,
         }
 
 
