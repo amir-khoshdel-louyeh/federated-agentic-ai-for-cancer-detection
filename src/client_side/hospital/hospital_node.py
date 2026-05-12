@@ -310,7 +310,10 @@ class HospitalNode(HospitalLifecycleContract):
         ]
 
     def _unique_id_for_row(self, row: np.ndarray) -> str:
-        canonical = json.dumps([float(x) for x in row.tolist()], separators=(",", ":"), sort_keys=False)
+        row_array = np.asarray(row)
+        if row_array.ndim > 1:
+            row_array = row_array.ravel()
+        canonical = json.dumps([float(x) for x in row_array.tolist()], separators=(",", ":"), sort_keys=False)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def _metrics_from_cached_entries(self, entries: list[dict[str, Any]], cancer_type: str) -> dict[str, Any]:
@@ -396,13 +399,16 @@ class HospitalNode(HospitalLifecycleContract):
                 probability = float(result.get("probability", 0.0))
                 label = "malignant" if probability >= threshold else "benign"
                 ground_truth = int(y_val[idx]) if idx < len(y_val) else 0
+                row_flat = np.asarray(x_val[idx])
+                if row_flat.ndim > 1:
+                    row_flat = row_flat.ravel()
                 entry = {
                     "hospital_id": self.hospital_id,
                     "split": "val",
                     "cancer_type": cancer_type,
                     "pattern": agent.name,
                     "unique_id": self._unique_id_for_row(x_val[idx]),
-                    "features": {f"feature_{i+1}": float(v) for i, v in enumerate(x_val[idx])},
+                    "features": {f"feature_{i+1}": float(v) for i, v in enumerate(row_flat)},
                     "probability": probability,
                     "uncertainty": float(result.get("uncertainty", 1.0)),
                     "clinical_reasoning": str(result.get("clinical_reasoning", "")),
@@ -419,13 +425,16 @@ class HospitalNode(HospitalLifecycleContract):
                 probability = float(result.get("probability", 0.0))
                 label = "malignant" if probability >= threshold else "benign"
                 ground_truth = int(y_test[idx]) if idx < len(y_test) else 0
+                row_flat = np.asarray(x_test[idx])
+                if row_flat.ndim > 1:
+                    row_flat = row_flat.ravel()
                 entry = {
                     "hospital_id": self.hospital_id,
                     "split": "test",
                     "cancer_type": cancer_type,
                     "pattern": agent.name,
                     "unique_id": self._unique_id_for_row(x_test[idx]),
-                    "features": {f"feature_{i+1}": float(v) for i, v in enumerate(x_test[idx])},
+                    "features": {f"feature_{i+1}": float(v) for i, v in enumerate(row_flat)},
                     "probability": probability,
                     "uncertainty": float(result.get("uncertainty", 1.0)),
                     "clinical_reasoning": str(result.get("clinical_reasoning", "")),

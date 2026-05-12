@@ -7,6 +7,8 @@ def apply_tabular_augmentation(x: np.ndarray, config: dict[str, any]) -> np.ndar
     """Apply lightweight tabular-style augmentation to numeric features.
     Works with existing feature vectors when image pixels are not available.
     """
+    if x.ndim != 2:
+        return x
     if not config.get("augmentation", {}).get("enabled", False):
         return x
 
@@ -50,7 +52,7 @@ def apply_tabular_augmentation(x: np.ndarray, config: dict[str, any]) -> np.ndar
 
 def augment_dataset(x_train: np.ndarray, y_train: np.ndarray, config: dict[str, any]) -> tuple[np.ndarray, np.ndarray]:
     """Return augmented training data (appended to existing samples)."""
-    if not config.get("augmentation", {}).get("enabled", False):
+    if x_train.ndim != 2 or not config.get("augmentation", {}).get("enabled", False):
         return x_train, y_train
 
     n_add = int(config.get("augmentation", {}).get("num_augmented_copies", 0))

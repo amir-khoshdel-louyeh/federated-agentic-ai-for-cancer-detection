@@ -117,6 +117,17 @@ class LLMReasoner:
 	def _local_backend_usable(self) -> bool:
 		return self.local_model_path is not None and self._local_dependencies_available
 
+	def _ollama_is_reachable(self) -> bool:
+		"""Quick health check to see if Ollama is actually running."""
+		if not self.local_llm_base_url:
+			return False
+		try:
+			import requests
+			response = requests.get(f"{self.local_llm_base_url.rstrip('/v1')}/health", timeout=1.0)
+			return response.status_code == 200
+		except:
+			return False
+
 	def generate_reasoning(
 		self,
 		cancer_type: str,
@@ -125,6 +136,15 @@ class LLMReasoner:
 		functions: list[dict[str, Any]] | None = None,
 		function_call: str | dict[str, Any] | None = None,
 	) -> dict[str, Any]:
+		# Skip Ollama if it's not reachable - go straight to fallback
+		if self.local_llm_base_url and not self._ollama_is_reachable():
+			logging.info(f"Ollama not reachable at {self.local_llm_base_url}; using fallback reasoning")
+			return {
+				"text": self._fallback_reasoning(cancer_type, observations, patient_context),
+				"json": None,
+				"function_call": None,
+			}
+		
 		prompt = self._build_prompt(cancer_type, observations, patient_context, functions=functions)
 
 		if self.provider in {"openai", "api"} and not self._openai_available:
@@ -184,9 +204,15 @@ class LLMReasoner:
 			try:
 				import openai
 
+				# For local Ollama, provide a dummy API key if none is specified
+				api_key = self.api_key or ""
+				if not api_key and self.local_llm_base_url:
+					api_key = "dummy-key-for-local-ollama"
+				
 				client = openai.OpenAI(
-					api_key=self.api_key or "",
+					api_key=api_key,
 					base_url=self.local_llm_base_url or None,
+					timeout=2.0,  # Short timeout - fail fast and use fallback
 				)
 
 				model_name = self.model_name

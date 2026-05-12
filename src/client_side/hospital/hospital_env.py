@@ -8,10 +8,21 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
+from ..hospital.config_helpers import get_malignant_ham
 from ..pre_processing.normalization import (
-    load_or_build_ham10000_metadata,
+    HAM_TO_CANCER_TYPE,
     normalize_isic2019_metadata,
 )
+
+HAM_LABEL_ID_TO_DX = {
+    0: "akiec",
+    1: "bcc",
+    2: "bkl",
+    3: "df",
+    4: "mel",
+    5: "nv",
+    6: "vasc",
+}
 
 
 @dataclass
@@ -59,6 +70,62 @@ class VirtualHospital:
             return y
 
         return None
+
+    def _load_ham_label_mapping(self) -> dict[int, str]:
+        return HAM_LABEL_ID_TO_DX.copy()
+
+    def _resolve_ham10000_label_ids_to_dx(self, label_ids: np.ndarray) -> np.ndarray:
+        mapping = self._load_ham_label_mapping()
+        dx_names = []
+        for label in label_ids:
+            try:
+                label_int = int(label)
+            except (TypeError, ValueError):
+                dx_names.append("unknown")
+                continue
+            dx_names.append(mapping.get(label_int, "unknown"))
+        return np.array(dx_names, dtype=object)
+
+    def _load_ham10000_pixel_csv(self, csv_path: str | Path) -> pd.DataFrame:
+        path = Path(csv_path)
+        raw_df = pd.read_csv(path)
+        if "label" not in raw_df.columns:
+            raise ValueError("HAM10000 pixel CSV must contain a 'label' column.")
+
+        image_id = (
+            raw_df["image_id"].astype(str)
+            if "image_id" in raw_df.columns
+            else raw_df.index.to_series().astype(str)
+        )
+        feature_columns = [
+            col
+            for col in raw_df.columns
+            if col not in {"label", "image_id", "Unnamed: 0", "index"}
+        ]
+        if len(feature_columns) != 28 * 28 * 3:
+            raise ValueError(
+                f"Expected 28*28*3 pixel columns for HAM10000 pixel CSV, got {len(feature_columns)} columns."
+            )
+
+        label_ids = raw_df["label"].astype(np.int64).to_numpy()
+        dx_names = self._resolve_ham10000_label_ids_to_dx(label_ids)
+
+        target_mode = (self.config or {}).get("preprocessing", {}).get("target_encoding", "binary")
+        malignant_ham = get_malignant_ham(self.config)
+        if target_mode == "dx":
+            target_values = label_ids
+        else:
+            target_values = np.asarray([1 if dx in malignant_ham else 0 for dx in dx_names], dtype=np.int64)
+
+        cancer_types = [HAM_TO_CANCER_TYPE.get(dx, "OTHER") for dx in dx_names]
+
+        output = raw_df.drop(columns=["label"], errors="ignore").copy()
+        output["image_id"] = image_id.astype(str)
+        output["target"] = target_values
+        output["cancer_type"] = cancer_types
+        output["dx"] = dx_names
+        output["dx_encoded"] = label_ids
+        return output
 
     def _split_with_stratification(
         self,
@@ -186,10 +253,10 @@ class VirtualHospital:
             raise ValueError("No dataset enabled: at least one of ham_metadata_csv or isic_labels_csv must be provided.")
         data = pd.concat(dfs, axis=0, ignore_index=True)
 
-        x_data = data.drop(columns=["target", "image_id", "cancer_type"], errors="ignore")
-        if "dx" in x_data.columns:
-            x_data = x_data.drop(columns=["dx"])
+        preprocessing_mode = str((self.config or {}).get("preprocessing", {}).get("mode", "tabular")).strip().lower()
+        x_data = data.drop(columns=["target", "image_id", "cancer_type", "dx", "dx_encoded"], errors="ignore")
         x = x_data.select_dtypes(include=[np.number]).to_numpy(dtype=np.float32)
+
         y = data["target"].to_numpy(dtype=np.int64)
         ids = data["image_id"].to_numpy()
         cancer_types = data["cancer_type"].to_numpy(dtype=str)
@@ -290,7 +357,7 @@ class VirtualHospital:
                 stratify=stratify_labels,
                 random_state=self.random_state,
             )
-            x_train = np.zeros((0, x.shape[1]), dtype=np.float32)
+            x_train = np.zeros((0, *x.shape[1:]), dtype=np.float32)
             y_train = np.zeros((0,), dtype=np.int64)
             cancer_train = np.array([], dtype=str)
             test_ids = ids_test
@@ -309,7 +376,10 @@ class VirtualHospital:
         )
 
     def _load_ham10000(self, metadata_csv: str | Path) -> pd.DataFrame:
-        return load_or_build_ham10000_metadata(metadata_csv, config=self.config)
+        path = Path(metadata_csv)
+        if not path.exists():
+            raise FileNotFoundError(f"HAM10000 CSV not found: {path}")
+        return self._load_ham10000_pixel_csv(path)
 
     def _load_isic2019(self, labels_csv: str | Path, metadata_csv: str | Path = None) -> pd.DataFrame:
         return normalize_isic2019_metadata(labels_csv, metadata_csv=metadata_csv, config=self.config)

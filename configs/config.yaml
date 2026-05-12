@@ -12,18 +12,18 @@ cancer_types:
 enabled_datasets:
   - HAM10000
 
-ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
+ham_csv: 'src/client_side/datasets/HAM10000/hmnist_28_28_RGB.csv'
 out_dir: outputs
 
 # ========================
 # DATA STRATEGY (Non-IID for Federated Testing)
 # ========================
 data_split:
-  holdout_test: 0.2    # increase test share for more robust Agent evaluation
+  holdout_test: 0.3    # 30% test, 70% validation split for balanced evaluation
   k_folds: 1           # usually one fold is enough in LLM-based systems
   current_fold: 0
   stratify: true
-  mode: tabular        # your system is tabular metadata-based
+  mode: tabular       # your system is now tabular and uses preprocessed HMNIST features
 
   # map HAM10000 labels to malignant classes
   malignant_ham:
@@ -39,8 +39,13 @@ detection:
 
 # limit sample count to control LLM cost and runtime
 sampling:
-  total_samples: 10   # keep initial test volume small
+  total_samples: 30   # 30 samples = ~10 val, ~9 test for fast GPU iteration
   random_seed: 42
+
+preprocessing:
+  enabled: true
+  mode: tabular  # tabular pixel CSV input
+  target_encoding: binary  # options: binary, dx
 
 # ========================
 # FEDERATION & NODES
@@ -77,8 +82,9 @@ inference:
   uncertainty_threshold: 0.6  # call tools when confidence is below 60%
   decision_threshold: 0.5     # malignancy decision threshold
   decision_threshold_penalty_weight: 0.5  # penalty weight for unbalanced all-positive/all-negative decisions
-  request_delay_seconds: 0.2  # delay between LLM requests to smooth CPU/GPU load
+  request_delay_seconds: 0.1  # minimal delay for GPU (no CPU contention needed)
   max_retries_per_sample: 2
+  gpu_enabled: true           # Enable GPU acceleration for inference
 
 prompt_evolution:
   enabled: true

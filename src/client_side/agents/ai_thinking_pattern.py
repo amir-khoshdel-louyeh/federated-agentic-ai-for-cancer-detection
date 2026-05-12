@@ -268,9 +268,12 @@ class AIThinkingPattern(ThinkingPattern):
 
         structured_results: list[dict[str, Any]] = []
         for row in x:
+            row_array = np.asarray(row)
+            if row_array.ndim > 1:
+                row_array = row_array.ravel()
             feature_map = {
                 f"feature_{index}": float(value)
-                for index, value in enumerate(row, start=1)
+                for index, value in enumerate(row_array, start=1)
             }
             unique_id = self._make_unique_id(feature_map)
             cached_entry = self._find_cached_entry(unique_id)
@@ -399,8 +402,12 @@ class AIThinkingPattern(ThinkingPattern):
         }
 
     def _build_prompt(self, row: np.ndarray, experience_context: str | None = None) -> str:
+        row_array = np.asarray(row)
+        if row_array.ndim > 1:
+            row_array = row_array.ravel()
+
         feature_lines = []
-        for index, value in enumerate(row, start=1):
+        for index, value in enumerate(row_array, start=1):
             feature_lines.append(
                 f"feature_{index}: {float(value):.4f} "
                 "(normalized clinical signal; interpret values as scaled risk indicators rather than raw measurements)"

@@ -27,7 +27,7 @@ cancer_types:
 enabled_datasets:
   - HAM10000
 
-ham_csv: 'src/client_side/datasets/HAM10000/HAM10000_metadata.csv'
+ham_csv: 'src/client_side/datasets/HAM10000/hmnist_28_28_RGB.csv'
 out_dir: outputs
 
 # ========================
@@ -66,11 +66,8 @@ augmentation:
 
 preprocessing:
   enabled: true
-  mode: tabular  # options: tabular, image
+  mode: tabular  # tabular pixel CSV input
   target_encoding: binary  # options: binary, dx
-  image:
-    resize: [224, 224]
-    normalize: imagenet  # options: minmax, imagenet
 
 sampling:
   total_samples: 40

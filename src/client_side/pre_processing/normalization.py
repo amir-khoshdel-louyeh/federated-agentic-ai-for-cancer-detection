@@ -50,51 +50,6 @@ def _label_encode(series: pd.Series) -> np.ndarray:
     return _factorize_sorted(series)
 
 
-def normalize_ham10000_metadata(
-    metadata_csv: str | Path | pd.DataFrame,
-    config: dict[str, Any] | None = None,
-) -> pd.DataFrame:
-    """Normalize HAM10000 metadata into the project feature schema."""
-    df = pd.read_csv(metadata_csv) if isinstance(metadata_csv, (str, Path)) else metadata_csv.copy()
-    image_col = "image_id" if "image_id" in df.columns else df.columns[0]
-
-    dx = df["dx"].astype(str).str.lower()
-    malignant_ham = get_malignant_ham(config)
-    dx_encoded = _label_encode(dx)
-    target_mode = (config or {}).get("preprocessing", {}).get("target_encoding", "binary")
-    target = dx_encoded if target_mode == "dx" else dx.isin(malignant_ham).astype(int)
-    cancer_type = dx.map(HAM_TO_CANCER_TYPE).fillna("OTHER")
-
-    base = pd.DataFrame(
-        {
-            "image_id": df[image_col].astype(str),
-            "target": target,
-            "cancer_type": cancer_type,
-            "dx_encoded": dx_encoded,
-        }
-    )
-    return _build_features(base, df, age_candidates=("age",), site_candidates=("localization",))
-
-
-def load_or_build_ham10000_metadata(
-    metadata_csv: str | Path,
-    config: dict[str, Any] | None = None,
-    normalized_filename: str = "HAM10000_metadata_normalized.csv",
-) -> pd.DataFrame:
-    """Load a normalized HAM10000 file if present, otherwise normalize and persist it."""
-    path = Path(metadata_csv)
-    if path.name == normalized_filename:
-        return pd.read_csv(path)
-
-    normalized_path = path.parent / normalized_filename
-    if normalized_path.exists():
-        return pd.read_csv(normalized_path)
-
-    df = normalize_ham10000_metadata(path, config=config)
-    df.to_csv(normalized_path, index=False)
-    return df
-
-
 def normalize_isic2019_metadata(
     labels_csv: str | Path | pd.DataFrame,
     metadata_csv: str | Path | pd.DataFrame | None = None,
