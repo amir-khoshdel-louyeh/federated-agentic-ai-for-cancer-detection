@@ -123,9 +123,12 @@ class LLMReasoner:
 			return False
 		try:
 			import requests
-			response = requests.get(f"{self.local_llm_base_url.rstrip('/v1')}/health", timeout=1.0)
+			base_url = self.local_llm_base_url.rstrip("/")
+			if not base_url.endswith("/v1"):
+				base_url = f"{base_url}/v1"
+			response = requests.get(f"{base_url}/models", timeout=1.0)
 			return response.status_code == 200
-		except:
+		except Exception:
 			return False
 
 	def generate_reasoning(
@@ -136,14 +139,13 @@ class LLMReasoner:
 		functions: list[dict[str, Any]] | None = None,
 		function_call: str | dict[str, Any] | None = None,
 	) -> dict[str, Any]:
-		# Skip Ollama if it's not reachable - go straight to fallback
+		# Skip Ollama if it's not reachable and fail fast instead of using fallback.
 		if self.local_llm_base_url and not self._ollama_is_reachable():
-			logging.info(f"Ollama not reachable at {self.local_llm_base_url}; using fallback reasoning")
-			return {
-				"text": self._fallback_reasoning(cancer_type, observations, patient_context),
-				"json": None,
-				"function_call": None,
-			}
+			raise RuntimeError(
+				"Ollama is configured but not reachable at "
+				f"{self.local_llm_base_url}. "
+				"Start Ollama or verify the base URL before rerunning."
+			)
 		
 		prompt = self._build_prompt(cancer_type, observations, patient_context, functions=functions)
 
@@ -192,8 +194,7 @@ class LLMReasoner:
 		if self.provider == "auto" and not self._openai_backend_usable() and not self._local_backend_usable():
 			self._log_backend_warning(
 				"Auto provider could not find a usable model backend. "
-				"OpenAI is unavailable and no supported local model is configured. "
-				"Falling back to deterministic reasoning outputs.",
+				"OpenAI is unavailable and no supported local model is configured.",
 				"auto_backend_unavailable",
 			)
 
@@ -209,13 +210,12 @@ class LLMReasoner:
 				if not api_key and self.local_llm_base_url:
 					api_key = "dummy-key-for-local-ollama"
 				
+				model_name = self.model_name
 				client = openai.OpenAI(
 					api_key=api_key,
 					base_url=self.local_llm_base_url or None,
-					timeout=2.0,  # Short timeout - fail fast and use fallback
+				timeout=60.0,  # Longer timeout for local Ollama inference
 				)
-
-				model_name = self.model_name
 				kwargs: dict[str, Any] = {
 					"model": model_name,
 					"messages": [
@@ -226,7 +226,7 @@ class LLMReasoner:
 						},
 					],
 					"temperature": self.temperature,
-					"max_tokens": 250,
+					"max_tokens": 500,
 				}
 				if functions is not None:
 					kwargs["functions"] = functions
@@ -235,13 +235,29 @@ class LLMReasoner:
 				response = client.chat.completions.create(**kwargs)
 				message = response.choices[0].message
 				content = message.content.strip() if message.content else ""
-				json_data = self._parse_json_response(content)
+				json_data = self._parse_json_response(content) if content else None
 				function_call_data = None
 				if hasattr(message, "function_call") and message.function_call is not None:
 					function_call_data = {
 						"name": message.function_call.name,
 						"arguments": message.function_call.arguments,
 					}
+					arguments = message.function_call.arguments
+					if json_data is None:
+						if isinstance(arguments, str) and arguments.strip():
+							try:
+								json_data = json.loads(arguments)
+							except Exception:
+								pass
+						elif isinstance(arguments, dict):
+							json_data = arguments
+				if json_data is None:
+					raise RuntimeError(
+						"LLM response from %s did not contain parseable JSON: %s" % (
+							self.local_llm_base_url or "OpenAI",
+							content,
+						)
+					)
 				return {
 					"text": content,
 					"json": json_data,
@@ -259,11 +275,13 @@ class LLMReasoner:
 						"OpenAI backend request failed: %s",
 						repr(exc),
 					)
-				return {
-					"text": self._fallback_reasoning(cancer_type, observations, patient_context),
-					"json": None,
-					"function_call": None,
-				}
+				raise RuntimeError(
+					"LLM request failed for model %s at %s: %s" % (
+						model_name,
+						self.local_llm_base_url or "OpenAI",
+						repr(exc),
+					)
+				)
 
 		if self.provider == "local" and self.local_model_path is not None:
 			try:
@@ -276,6 +294,10 @@ class LLMReasoner:
 				outputs = model.generate(**inputs, max_new_tokens=200)
 				content = tokenizer.decode(outputs[0], skip_special_tokens=True)
 				json_data = self._parse_json_response(content)
+				if json_data is None:
+					raise RuntimeError(
+						"Local transformer output did not contain valid JSON: %s" % content
+					)
 				return {
 					"text": content,
 					"json": json_data,
@@ -286,17 +308,17 @@ class LLMReasoner:
 					"Local transformers model failed: %s",
 					repr(exc),
 				)
-				return {
-					"text": self._fallback_reasoning(cancer_type, observations, patient_context),
-					"json": None,
-					"function_call": None,
-				}
+				raise RuntimeError(
+					"Local transformer model failed for path %s: %s" % (
+						self.local_model_path,
+						repr(exc),
+					)
+				)
 
-		return {
-			"text": self._fallback_reasoning(cancer_type, observations, patient_context),
-			"json": None,
-			"function_call": None,
-		}
+		raise RuntimeError(
+			"No usable LLM backend is configured. "
+			"Provide local_llm settings for Ollama or a local_model_path for Transformers."
+		)
 
 	def _build_prompt(
 		self,
@@ -353,7 +375,11 @@ class LLMReasoner:
 				"select and call the appropriate function using the provided schema. "
 				"Do not make up arguments.\n"
 			)
-		prompt += "\n\nAnswer with a short clinical reasoning summary and a probability estimate."
+		prompt += (
+			"\n\nAnswer with a single valid JSON object that contains `probability`, "
+			"`uncertainty`, `reasoning`, and `diagnosis`. "
+			"Do not include any extra text outside the JSON object."
+		)
 		return prompt
 
 	def _system_prompt(self) -> str:
@@ -419,57 +445,9 @@ class LLMReasoner:
 					json_text,
 				)
 
-		# Fallback: try to pull basic fields from text if JSON parsing fails.
-		prob_match = re.search(r"(?:probability|prob)\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
-		unc_match = re.search(r"(?:uncertainty|confidence)\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
-		reasoning_match = re.search(r"reasoning\s*[:=]\s*\"([^\"]*)\"", text, re.I)
-		if prob_match or unc_match or reasoning_match:
-			result: dict[str, Any] = {}
-			if prob_match:
-				try:
-					result["probability"] = float(max(0.0, min(1.0, float(prob_match.group(1)))))
-				except (TypeError, ValueError):
-					pass
-			if unc_match:
-				try:
-					value = float(max(0.0, min(1.0, float(unc_match.group(1)))))
-					if "confidence" in unc_match.group(0).lower():
-						result["uncertainty"] = 1.0 - value
-					else:
-						result["uncertainty"] = value
-				except (TypeError, ValueError):
-					pass
-			if reasoning_match:
-				result["reasoning"] = reasoning_match.group(1).strip()
-			return result if result else None
-
 		logging.warning("LLM response could not be parsed as JSON: %s", text)
 		return None
 
-	def _fallback_reasoning(
-		self,
-		cancer_type: str,
-		observations: dict[str, Any],
-		patient_context: dict[str, Any] | None,
-	) -> str:
-		lines = [
-			f"Clinical reasoning for {cancer_type}:",
-			"The final probability is derived by aggregating multiple predictive patterns.",
-		]
-		for pattern in observations.get("patterns", []):
-			lines.append(
-				"- {name} predicted probability {prob:.3f} with uncertainty {unc:.3f}."
-				.format(
-					name=pattern.get("name", "unknown"),
-					prob=pattern.get("probability", 0.0),
-					unc=pattern.get("uncertainty", 0.0),
-				)
-			)
-		if patient_context:
-			lines.append("Patient context considered:")
-			for key, value in patient_context.items():
-				lines.append(f"- {key}: {value}")
-		return " ".join(lines)
 
 
 class SkinCancerAgent(ABC):
@@ -495,7 +473,13 @@ class SkinCancerAgent(ABC):
 			self._thinking_patterns = list(thinking_patterns)
 		if not self._thinking_patterns:
 			raise ValueError("At least one ThinkingPattern is required.")
-		self._llm_reasoner = llm_reasoner or LLMReasoner()
+		if llm_reasoner is not None:
+			self._llm_reasoner = llm_reasoner
+		else:
+			# Use the reasoning backend configured by the first thinking pattern when
+			# the agent itself has not been given an explicit LLM reasoner.
+			first_pattern = self._thinking_patterns[0]
+			self._llm_reasoner = getattr(first_pattern, "llm_reasoner", None) or LLMReasoner()
 		self._tools = tools or []
 		self._tool_registry = {tool.name: tool for tool in self._tools}
 
@@ -719,4 +703,6 @@ class SkinCancerAgent(ABC):
 					uncertainty = float(max(0.0, min(1.0, float(response_json.get("uncertainty", uncertainty)))))
 				except (TypeError, ValueError):
 					uncertainty = uncertainty
-results.append(self._format_agent_diagnosis(probability, uncertainty, reasoning_text, obs))
+			results.append(self._format_agent_diagnosis(probability, uncertainty, reasoning_text, obs))
+
+		return results

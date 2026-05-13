@@ -297,12 +297,33 @@ class AIThinkingPattern(ThinkingPattern):
 
             logging.info(f"AIThinkingPattern cache miss for {self.name} unique_id={unique_id}; calling LLM")
             experience_context = self._build_experience_context(feature_map, self.name)
+            functions = [
+                {
+                    "name": "diagnose_lesion",
+                    "description": "Return a structured diagnosis for the lesion.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "probability": {"type": "number", "minimum": 0, "maximum": 1},
+                            "uncertainty": {"type": "number", "minimum": 0, "maximum": 1},
+                            "reasoning": {"type": "string"},
+                            "diagnosis": {
+                                "type": "string",
+                                "enum": ["cancer type found", "not found", "present", "not present"],
+                            },
+                        },
+                        "required": ["probability", "uncertainty", "reasoning", "diagnosis"],
+                    },
+                }
+            ]
             response = self.llm_reasoner.generate_reasoning(
                 "AI_AGENT",
                 {
                     "patterns": [{"name": self.name, "details": self._build_prompt(row, experience_context)}],
                     "clinical_features": feature_map,
                 },
+                functions=functions,
+                function_call={"name": "diagnose_lesion"},
             )
             if self.request_delay_seconds > 0.0:
                 time.sleep(self.request_delay_seconds)
@@ -334,31 +355,84 @@ class AIThinkingPattern(ThinkingPattern):
             return self._last_structured_outputs
         return None
 
+    def _parse_numeric_field(self, value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            text = value.strip().replace("%", "")
+            try:
+                return float(text)
+            except ValueError:
+                return None
+        return None
+
+    def _extract_scalar_from_nested(self, value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            return self._parse_numeric_field(value)
+        if isinstance(value, dict):
+            numeric_values = [self._extract_scalar_from_nested(v) for v in value.values()]
+            numeric_values = [v for v in numeric_values if v is not None]
+            if numeric_values:
+                return sum(numeric_values) / len(numeric_values)
+            return None
+        if isinstance(value, list):
+            numeric_values = [self._extract_scalar_from_nested(v) for v in value]
+            numeric_values = [v for v in numeric_values if v is not None]
+            if numeric_values:
+                return sum(numeric_values) / len(numeric_values)
+            return None
+        return None
+
     def _extract_structured_output(self, response: dict[str, Any]) -> dict[str, Any]:
         json_data = response.get("json")
         if isinstance(json_data, dict):
-            probability = json_data.get("probability")
+            probability = self._parse_numeric_field(json_data.get("probability"))
             if probability is None:
-                probability = json_data.get("Probability")
-            probability = float(max(0.0, min(1.0, float(probability)))) if probability is not None else 0.5
+                probability = self._extract_scalar_from_nested(json_data.get("probability"))
+            if probability is None:
+                probability = self._parse_numeric_field(json_data.get("Probability"))
 
-            uncertainty = json_data.get("uncertainty")
+            uncertainty = self._parse_numeric_field(json_data.get("uncertainty"))
             if uncertainty is None:
-                uncertainty = json_data.get("uncertainty")
+                uncertainty = self._extract_scalar_from_nested(json_data.get("uncertainty"))
             if uncertainty is None:
-                confidence = json_data.get("confidence") or json_data.get("Confidence")
-                try:
-                    confidence = float(confidence)
-                    uncertainty = 1.0 - max(0.0, min(1.0, confidence))
-                except (TypeError, ValueError):
-                    uncertainty = None
-            uncertainty = float(max(0.0, min(1.0, float(uncertainty)))) if uncertainty is not None else 0.2
+                uncertainty = self._parse_numeric_field(json_data.get("Uncertainty"))
+            if uncertainty is None:
+                confidence = self._parse_numeric_field(json_data.get("confidence"))
+                if confidence is None:
+                    confidence = self._parse_numeric_field(json_data.get("Confidence"))
+                if confidence is not None:
+                    uncertainty = 1.0 - float(max(0.0, min(1.0, confidence)))
+
+            diagnosis = json_data.get("diagnosis") or json_data.get("Diagnosis") or json_data.get("label") or json_data.get("Label") or "unknown"
+            diagnosis_text = str(diagnosis)
+
+            if probability is None or uncertainty is None:
+                text = response.get("text", "")
+                if probability is None:
+                    prob_match = re.search(r'"probability"\s*:\s*([0-9]+(?:\.[0-9]+)?)', text)
+                    if prob_match:
+                        probability = float(max(0.0, min(1.0, float(prob_match.group(1)))))
+                if uncertainty is None:
+                    unc_match = re.search(r'"uncertainty"\s*:\s*([0-9]+(?:\.[0-9]+)?)', text)
+                    if unc_match:
+                        uncertainty = float(max(0.0, min(1.0, float(unc_match.group(1)))))
+
+            probability = float(max(0.0, min(1.0, probability))) if probability is not None else 0.5
+            uncertainty = float(max(0.0, min(1.0, uncertainty))) if uncertainty is not None else 0.2
 
             reasoning = json_data.get("reasoning") or json_data.get("Reasoning") or json_data.get("analysis") or ""
             return {
                 "probability": probability,
                 "uncertainty": uncertainty,
                 "clinical_reasoning": str(reasoning),
+                "diagnosis": diagnosis_text,
                 "details": str(json_data.get("details", "single-shot structured prediction")),
             }
 
@@ -368,6 +442,8 @@ class AIThinkingPattern(ThinkingPattern):
         reasoning = ""
         if text:
             prob_match = re.search(r"Probability\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
+            if not prob_match:
+                prob_match = re.search(r"\"probability\"\s*:\s*([0-9]+(?:\.[0-9]+)?)", text)
             if not prob_match:
                 prob_match = re.search(r"([01](?:\.\d+)?)", text)
             if prob_match:
@@ -385,6 +461,8 @@ class AIThinkingPattern(ThinkingPattern):
                     pass
             else:
                 unc_match = re.search(r"uncertainty\s*[:=]\s*([01](?:\.\d+)?)", text, re.I)
+                if not unc_match:
+                    unc_match = re.search(r"\"uncertainty\"\s*:\s*([0-9]+(?:\.[0-9]+)?)", text, re.I)
                 if unc_match:
                     try:
                         uncertainty = float(max(0.0, min(1.0, float(unc_match.group(1)))))
@@ -428,7 +506,9 @@ class AIThinkingPattern(ThinkingPattern):
             prompt += "\n\n" + experience_context
 
         prompt += (
-            "\n\nProvide a short structured reasoning summary with positive and negative evidence, then return a JSON object with keys: probability, uncertainty, reasoning. "
+            "\n\nProvide a short structured reasoning summary with positive and negative evidence, then return a single valid JSON object with exactly these keys: probability, uncertainty, reasoning, diagnosis. "
+            "Do not include markdown fences, no extra text before or after the JSON object, and do not use nested objects or arrays for probability or uncertainty. "
+            "Use scalar values only: probability and uncertainty must each be a single number between 0 and 1. "
             "The reasoning text should include a confidence check and a final reflective step."
         )
         return prompt

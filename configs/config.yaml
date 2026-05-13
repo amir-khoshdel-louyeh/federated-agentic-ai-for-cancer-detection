@@ -33,9 +33,10 @@ data_split:
     - scc
 
 detection:
-  mode: detect_only  # available modes: detect_only, detect_then_type
+  mode: detect_only  # available modes: detect_only, detect_then_type, type_only
                        # - detect_only: only run the general cancer detector
                        # - detect_then_type: run the cancer detector and also evaluate specific cancer-type agents
+                       # - type_only: ignore cancer_detection_agent and run only the specific cancer-type agents as binary classifiers
 
 # limit sample count to control LLM cost and runtime
 sampling:
@@ -52,10 +53,11 @@ preprocessing:
 # ========================
 # simulate three hospitals to test aggregation strength
 hospital_ids: 
-  - HOSPITAL_A
+  - HOSPITAL_A 
+  - Hospital_B
 
 federation:
-  aggregation_algorithm: no_operation  # use adaptive algorithm based on metrics
+  aggregation_algorithm: fedavg  # use adaptive algorithm based on metrics
   num_rounds: 3                   # number of metric exchange rounds between hospitals and server
 
 # ========================
@@ -109,7 +111,7 @@ meta_agent:
   local_llm:
     base_url: "http://localhost:11434/v1"
     model_name: "llama3.1:8b"
-    temperature: 0.0          # keep medical reasoning deterministic by using zero temperature
+    temperature: 0.0
 
   # server scoring strategy for hospitals
   local:

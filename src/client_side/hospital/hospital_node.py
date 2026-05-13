@@ -183,6 +183,15 @@ class HospitalNode(HospitalLifecycleContract):
             return "detect_then_type"
         return str(self.config.get("detection", {}).get("mode", "detect_then_type")).strip()
 
+    def _should_run_cancer_type(self, cancer_type: str) -> bool:
+        mode = self._detection_mode()
+        cancer_key = str(cancer_type).strip().upper()
+        if mode == "detect_only":
+            return cancer_key == "CANCER"
+        if mode == "type_only":
+            return cancer_key != "CANCER"
+        return True
+
     def _inference_cache_dir(self) -> Path:
         return Path(self.config.get("out_dir", "outputs")) / "hospitals" / self.hospital_id
 
@@ -328,6 +337,46 @@ class HospitalNode(HospitalLifecycleContract):
             penalty_weight=self.decision_threshold_penalty_weight,
         )
 
+    def _most_likely_cancer_per_sample(self, split: str) -> dict[str, dict[str, Any]]:
+        candidates: dict[str, dict[str, Any]] = {}
+        for entry in self._load_inference_entries() or []:
+            if entry.get("split") != split:
+                continue
+            cancer_type = str(entry.get("cancer_type", "")).strip().upper()
+            if cancer_type == "CANCER":
+                continue
+            if entry.get("cache_status") == "failed":
+                continue
+            unique_id = str(entry.get("unique_id", ""))
+            if not unique_id:
+                continue
+            try:
+                probability = float(entry.get("probability", 0.0))
+            except (TypeError, ValueError):
+                probability = 0.0
+            existing = candidates.get(unique_id)
+            if existing is None or probability > existing["probability"]:
+                candidates[unique_id] = {
+                    "cancer_type": cancer_type,
+                    "probability": probability,
+                }
+        return candidates
+
+    def _annotate_most_likely_cancer_subtype(self, split: str) -> None:
+        best_map = self._most_likely_cancer_per_sample(split)
+        if not best_map:
+            return
+        updated_entries: list[dict[str, Any]] = []
+        for entry in self._load_inference_entries() or []:
+            if entry.get("split") == split:
+                unique_id = str(entry.get("unique_id", ""))
+                best = best_map.get(unique_id)
+                if best is not None:
+                    entry["most_likely_cancer_type"] = best["cancer_type"]
+                    entry["most_likely_cancer_probability"] = best["probability"]
+            updated_entries.append(entry)
+        self._rewrite_inference_cache(updated_entries)
+
     def _mean_uncertainty_from_entries(self, entries: list[dict[str, Any]]) -> float:
         if not entries:
             return 1.0
@@ -363,7 +412,7 @@ class HospitalNode(HospitalLifecycleContract):
         detection_mode = self._detection_mode()
         logging.info(f"Hospital {self.hospital_id}: starting inference for detection mode={detection_mode}")
         for cancer_type in self.scope.agent_portfolio.cancer_types:
-            if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
+            if not self._should_run_cancer_type(cancer_type):
                 continue
 
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
@@ -476,9 +525,15 @@ class HospitalNode(HospitalLifecycleContract):
         }
         self.metrics_store.setdefault("evaluation", {})["test"] = per_agent_metrics
         self.metrics_store["lifecycle_state"] = "inferred"
+
+        detection_mode = self._detection_mode()
+        if detection_mode in {"detect_then_type", "type_only"}:
+            self._annotate_most_likely_cancer_subtype("val")
+            self._annotate_most_likely_cancer_subtype("test")
+
         logging.info(
             f"Hospital {self.hospital_id}: inference completed. "
-            f"Cached {sum([len(self._load_cached_predictions('val', ct)) + len(self._load_cached_predictions('test', ct)) for ct in self.scope.agent_portfolio.cancer_types if self._detection_mode() != 'detect_only' or ct.upper() == 'CANCER'])} samples."
+            f"Cached {sum([len(self._load_cached_predictions('val', ct)) + len(self._load_cached_predictions('test', ct)) for ct in self.scope.agent_portfolio.cancer_types if self._should_run_cancer_type(ct)])} samples."
         )
 
     def train(self) -> None:
@@ -632,7 +687,7 @@ class HospitalNode(HospitalLifecycleContract):
 
         detection_mode = self._detection_mode()
         for cancer_type, pattern_name in selected_patterns.items():
-            if detection_mode == "detect_only" and str(cancer_type).strip().upper() != "CANCER":
+            if not self._should_run_cancer_type(cancer_type):
                 continue
             agent = self.scope.agent_portfolio.get_agent(cancer_type)
             if str(cancer_type).strip().upper() == "CANCER":

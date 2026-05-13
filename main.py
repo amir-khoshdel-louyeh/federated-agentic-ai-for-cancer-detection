@@ -127,7 +127,7 @@ meta_agent:
   local_model_path: null
   local_llm:
     base_url: "http://localhost:11434/v1"
-    model_name: "llama3.1:8b"
+    model_name: "openclaw"
     temperature: 0.0
   local:
     enable: true
@@ -223,4 +223,3 @@ if __name__ == "__main__":
   import sys
   ensure_config()
   runpy.run_path("src/simulator/cli.py", run_name="__main__")
-  
